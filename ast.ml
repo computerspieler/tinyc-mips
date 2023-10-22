@@ -5,7 +5,7 @@ type binop =
 	| BinShl | BinShr
 
 type unop =
-	| BinNot | BoolNot | Dereference | Reference
+	| BinNot | BoolNot | Dereference | Reference | Neg
 
 type expr =
 	| Ebinop of binop * expr * expr
@@ -17,6 +17,7 @@ type expr =
 
 type var_type =
 	| Void | Int | Ptr of var_type
+  | Ref of var_type
   | Func of var_type * var_type list
 
 type var = string * var_type
@@ -27,7 +28,7 @@ type arg =
 type stmt =
 	| Ssimple of expr
 	| SVarDecl of string list * var_type
-	| Sblock of stmt list * var list
+	| Sblock of stmt list
 	| Sdowhile of expr * stmt 
 	| Swhile of expr * stmt 
 	| Sif of expr * stmt * stmt 

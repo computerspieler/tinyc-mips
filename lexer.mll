@@ -1,5 +1,4 @@
 {
-  open Lexing
   open Parser
    
   exception Lexing_error of char
@@ -24,27 +23,38 @@ rule token = parse
 	| whitespace						{ token lexbuf }
 	| "//" _* '\n'						{ token lexbuf }
 	| "/*" _* "*/"						{ token lexbuf }
-	| integer exp_10? as value			{ Int (int_of_string value) }
+
+	| "<<"								{ ShiftLeft }
+	| ">>"								{ ShiftRight }
+	| "=="								{ DoubleEqual }
+	| "!="								{ NotEqual }
+	| ">="								{ GreaterOrEqual }
+	| "<="								{ LessOrEqual }
+	| '>'								{ Greater }
+	| '<'								{ Less }
+	| "&&"								{ DoubleAmpersand }
+	| "||"								{ DoublePipe }
+	
 	| '+'								{ Plus }
 	| '-'								{ Minus }
 	| '*'								{ Star }
 	| '/'								{ Div }
 	| '%'								{ Percent }
-	| '('								{ Lparam }
-	| ')'								{ Rparam }
-	| '['								{ Lbracket }
-	| ']'								{ Rbracket }
-	| '{'								{ Lbrace }
-	| '}'								{ Rbrace }
-	| '='								{ Equal }
-	| '>'								{ Greater }
-	| '<'								{ Less }
-	| '!'								{ Not }
 	| '&'								{ Ampersand }
 	| '|'								{ Pipe }
-	| ';'								{ SemiColon }
-	| "..."								{ ThreeDots }
+
+	| '!'								{ Not }
 	| '~'								{ Tilde }
+
+	| '('								{ Lparam }
+	| ')'								{ Rparam }
+	| '{'								{ Lbrace }
+	| '}'								{ Rbrace }
+	| '='								{ AssignEqual }
+	| ';'								{ SemiColon }
 	| ','								{ Comma }
+	
+	| integer exp_10? as value			{ Int (int_of_string value) }
 	| str as s							{ String s }
 	| ident as value					{ id_or_kwd value }
+	| eof								{ EOF }

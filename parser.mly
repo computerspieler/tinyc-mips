@@ -2,23 +2,46 @@
 	open Ast;;
 %}
 
+%token EOF
 %token <int> Int
 %token <string> String 
 %token <string> Ident
+(*
+%token ThreeDots Lbracket Rbracket
+*)
 
 %token KdIf KdElse KdDo KdWhile KdInlineAsmMips
 %token KdInt KdVoid
 %token KdReturn KdBreak KdContinue
 
+%token ShiftLeft ShiftRight
 %token SemiColon Comma
 %token Plus Minus Star Div Percent Tilde
-%token Lparam Rparam Lbracket Rbracket Lbrace Rbrace
-%token Equal Greater Less
+%token Lparam Rparam Lbrace Rbrace
+
+%token DoubleEqual NotEqual Greater Less GreaterOrEqual LessOrEqual
+%token DoubleAmpersand DoublePipe
+
 %token Not Ampersand Pipe
-%token ThreeDots
+%token AssignEqual
+
+%right AssignEqual
+%left DoublePipe
+%left DoubleAmpersand
+%left DoubleEqual NotEqual
+%left Greater GreaterOrEqual Less LessOrEqual
+%left ShiftLeft ShiftRight
+%left Plus
+%left Percent Div
+
+%left Pipe Ampersand Minus Star
+%nonassoc Uunop
+%nonassoc Lparam
+
+%nonassoc IfX
+%nonassoc KdElse
 
 %start prog
-
 %type <Ast.prog> prog
 
 %%
@@ -28,96 +51,112 @@ var_type:
 	| v=var_type Star { Ast.Ptr v }
 ;
 
-binop:
-	| Plus					{ Add }
-	| Minus					{ Sub }
-	| Star					{ Mul }
-	| Div					{ Div }
-	| Percent				{ Mod }
-	| Ampersand				{ BinAnd }
-	| Pipe					{ BinOr }
-	| Ampersand ; Ampersand	{ BoolAnd }
-	| Pipe ; Pipe			{ BoolOr }
-	| Equal ; Equal			{ BoolEq }
-	| Not ; Equal			{ BoolNeq }
-	| Greater				{ BoolGreater }
-	| Greater ; Equal		{ BoolGreaterEq }
-	| Less					{ BoolLess }
-	| Less ; Equal			{ BoolLessEq }
-	| Equal					{ Assign }
-	| Greater ; Greater		{ BinShr }
-	| Less; Less			{ BinShl }
+var_names:
+	| n = Ident { [n] }
+	| n = Ident Comma next=var_names { n::next }
 ;
 
-unop:
+expr_str:
+	| l = String+ { List.fold_left (^) "" l }
+
+expr_args:
+	| e=expr { [e] }
+	| e=expr Comma next=expr_args { e::next }
+;
+
+expr:
+	| i=Int						{ Eint i }
+	| s=expr_str				{ Estring s }
+	| i=Ident					{ Eident i }
+	| Lparam e=expr Rparam		{ e }
+	| u=unop e=expr %prec Uunop { Eunop(u, e) }
+	| lhs=expr b=binop rhs=expr { Ebinop(b, lhs, rhs) }
+	| f=expr Lparam args = expr_args? Rparam
+		{
+			match args with
+			| Some args -> Ecall(f, args)
+			| None -> Ecall(f, [])
+		}
+
+%inline binop:
+	| Star					{ Mul }
+	| Div					{ Div }
+	| Plus					{ Add }
+	| Minus					{ Sub }
+	| Percent				{ Mod }
+	| ShiftRight			{ BinShr }
+	| ShiftLeft				{ BinShl }
+	| Ampersand				{ BinAnd }
+	| Pipe					{ BinOr }
+	| AssignEqual			{ Assign }
+	| Greater				{ BoolGreater }
+	| Less					{ BoolLess }
+	| GreaterOrEqual		{ BoolGreaterEq }
+	| LessOrEqual			{ BoolLessEq }
+	| DoubleEqual			{ BoolEq }
+	| NotEqual				{ BoolNeq }
+	| DoubleAmpersand		{ BoolAnd }
+	| DoublePipe			{ BoolOr }
+
+%inline unop:
 	| Not		{ BoolNot }
 	| Tilde		{ BinNot }
 	| Ampersand	{ Reference }
 	| Star		{ Dereference }
-
-expr_args:
-	| e=expr { [e] }
-	| e=expr ; Comma ; next=expr_args { e::next }
-;
-
-(* Permet de gérer la concaténation de chaines de caractères *)
-expr_str:
-	| s = String { s }
-	| s1 = String ; next = expr_str { s1 ^ next }
-
-expr:
-	| lhs=expr ; b=binop ; rhs=expr { Ebinop(b, lhs, rhs) }
-	| u=unop ; e=expr { Eunop(u, e) }
-	| f=expr ; Lparam ; args = expr_args ; Rparam
-		{ Ecall(f, args) }
-	| f=expr ; Lparam ; Rparam
-		{ Ecall(f, []) }
-	| i=Int			{ Eint i }
-	| s=expr_str	{ Estring s }
-	| i=Ident		{ Eident i }
-;
-
-condition:
-	Lparam ; cond=expr ; Rparam { cond }
+	| Minus		{ Neg }
 ;
 
 stmt:
-	| e=expr ; SemiColon { Ssimple e }
+	| e=expr SemiColon { Ssimple e }
 	| s=stmt_block { s }
-	| KdDo ; code=stmt_block ; KdWhile ; cond=condition ; SemiColon
+	| KdDo code=stmt_block KdWhile cond=condition SemiColon
 		{ Sdowhile(cond, code) }
-	| KdWhile ; cond = condition ; code=stmt_block
+	| KdWhile cond=condition code=stmt
 		{ Swhile(cond, code) }
-	| KdIf ; cond = condition ; code=stmt
-		{ Sif(cond, code, Sblock ([], [])) }
-	| KdIf ; cond = condition ; if_code=stmt ; KdElse ; else_code=stmt
-		{ Sif(cond, if_code, else_code) }
-	| KdBreak ; SemiColon { Sbreak }
-	| KdContinue ; SemiColon { Scontinue }
-	| KdReturn ; e=expr { Sreturn e }
 
-	| KdInlineAsmMips ; Lbrace ; s=expr_str ; Rbrace { SInlineAssembly s }
-	| KdInlineAsmMips ; Lbrace ; Rbrace { SInlineAssembly "" }
+	(* Solution au problème du "dangling else"
+		reprise de ce blog: https://www.epaperpress.com/lexandyacc/if.html *)
+	| KdIf cond=condition if_code=stmt KdElse else_code=stmt
+		{ Sif(cond, if_code, else_code) }
+	| KdIf cond=condition code=stmt %prec IfX
+		{ Sif(cond, code, Sblock []) }
+	
+	| SemiColon; s = stmt { s }
+
+	| KdBreak SemiColon { Sbreak }
+	| KdContinue SemiColon { Scontinue }
+	| KdReturn e=expr SemiColon { Sreturn e }
+
+	| KdInlineAsmMips Lbrace s=expr_str Rbrace { SInlineAssembly s }
+	| KdInlineAsmMips Lbrace Rbrace { SInlineAssembly "" }
+
+	| t=var_type n=var_names SemiColon { SVarDecl(n, t) }
+
+%inline condition:
+	Lparam cond=expr Rparam	{ cond }
 ;
 
 stmt_block: 
-	Lbrace ; s=stmt* ; Rbrace { Sblock (s, []) }
+	Lbrace s = stmt* Rbrace { Sblock s }
 ;
 
 args_def:
-	| { [] }
-	| t=var_type ; n=Ident ; Comma ; r = args_def { (Val (n, t)) :: r }
-	| t=var_type ; n=Ident { [Val (n, t)] }
+	| t=var_type n=Ident Comma r = args_def { (Val (n, t)) :: r }
+	| t=var_type n=Ident { [Val (n, t)] }
 ;
 
 def:
-	| t=var_type ; n=Ident ; Lparam ; a=args_def ; Rparam ; s=stmt_block
-		{ Dfuncdef(n, t, a, s) }
-	| t=var_type ; n=Ident ; SemiColon
+	| t=var_type n=Ident SemiColon
 		{ Dvardef (n, t) }
+	| t=var_type n=Ident Lparam a=args_def? Rparam s=stmt_block
+		{
+			match a with
+			| None -> Dfuncdef(n, t, [], s)
+			| Some a -> Dfuncdef(n, t, a, s)
+		}
 	;
 
-prog: p = list(def) { p }
+prog: p = def* EOF { p }
 ;
 
 %%

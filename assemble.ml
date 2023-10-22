@@ -17,9 +17,11 @@ let rec instruction_to_mips (i : instruction) : string =
 	let itm = instruction_to_mips in
 	match i with
 	| Label s -> (s ^ ":")
-	| CallFunction (AReg r) -> ("jalr " ^ (rtm r))
-	| CallFunction (ALabel l) -> ("jal " ^ l)
-	| CallFunction (AImmediate i) -> ("jal " ^ (soi i))
+	| CallFunction (Reg r) -> ("jalr " ^ (rtm r))
+	| CallFunction x -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
+    (itm (CallFunction (Reg RegInternal)))
+  )
 	| Return -> ("jr $ra")
 	| InlineAssembly s -> s
 	| PushFrame -> (
@@ -46,222 +48,142 @@ let rec instruction_to_mips (i : instruction) : string =
 
 	| Add(rd, rs, Reg rt) ->
 		("add " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
-  | Add(rd, rs, Immediate it) -> (
-    (itm (LoadAddr (AImmediate it, RegInternal))) ^ "\n" ^
-    (itm (Add (rd, rs, Reg RegInternal)))
-  )
-  | Add(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Add (rd, rs, Reg RegInternal)))
-  )
-  | Add(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
+  | Add(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
     (itm (Add (rd, rs, Reg RegInternal)))
   )
 
 	| Sub(rd, rs, Reg rt) ->
 		("sub " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
-	| Sub(rd, rs, Immediate it) -> (
-    (itm (LoadAddr (AImmediate it, RegInternal))) ^ "\n" ^
+	| Sub(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
 		(itm (Sub (rd, rs, Reg RegInternal)))
 	)
-  | Sub(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Sub (rd, rs, Reg RegInternal)))
-  )
-  | Sub(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
-    (itm (Sub (rd, rs, Reg RegInternal)))
-  )
 
 	| Mul(rd, rs, Reg rt) ->
 		("mult " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
-	| Mul(rd, rs, Immediate it) -> (
-    (itm (LoadAddr (AImmediate it, RegInternal))) ^ "\n" ^
+	| Mul(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
 		(itm (Mul (rd, rs, Reg RegInternal)))
 	)
-  | Mul(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Mul (rd, rs, Reg RegInternal)))
-  )
-  | Mul(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
-    (itm (Mul (rd, rs, Reg RegInternal)))
-  )
 
 	| Div(rd, rs, Reg rt) -> (
 		"div " ^ (rtm rs) ^ "," ^ (rtm rt) ^ "\n" ^
 		"mflo " ^ (rtm rd)
 	)
-	| Div(rd, rs, Immediate it) -> (
-    (itm (LoadAddr (AImmediate it, RegInternal))) ^ "\n" ^
+	| Div(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
 		(itm (Div (rd, rs, Reg RegInternal)))
 	)
-  | Div(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Div (rd, rs, Reg RegInternal)))
-  )
-  | Div(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
-    (itm (Div (rd, rs, Reg RegInternal)))
-  )
 
 	| Mod(rd, rs, Reg rt) -> (
 		"div " ^ (rtm rs) ^ "," ^ (rtm rt) ^ "\n" ^
 		"mfhi " ^ (rtm rd)
 	)
-	| Mod(rd, rs, Immediate it) -> (
-    (itm (LoadAddr (AImmediate it, RegInternal))) ^ "\n" ^
+	| Mod(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
 		(itm (Mod (rd, rs, Reg RegInternal)))
 	)
-  | Mod(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Mod (rd, rs, Reg RegInternal)))
-  )
-  | Mod(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
-    (itm (Mod (rd, rs, Reg RegInternal)))
-  )
 
 	| Shl(rd, rs, Reg rt) ->
 		("sllv " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
-	| Shl(rd, rs, Immediate it) ->
-		("sll " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (soi it))
-  | Shl(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Shl (rd, rs, Reg RegInternal)))
-  )
-  | Shl(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
+	| Shl(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
     (itm (Shl (rd, rs, Reg RegInternal)))
   )
    
 	| Shr(rd, rs, Reg rt) ->
 		("slrv " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
-	| Shr(rd, rs, Immediate it) ->
-		("slr " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (soi it))
-  | Shr(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
+	| Shr(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
     (itm (Shr (rd, rs, Reg RegInternal)))
   )
-  | Shr(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
-    (itm (Shr (rd, rs, Reg RegInternal)))
-  )  
 
 	| And(rd, rs, Reg rt) ->
 		("and " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
-	| And(rd, rs, Immediate it) ->
-		("andi " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (soi it))
-  | And(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (And (rd, rs, Reg RegInternal)))
-  )
-  | And(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
+	| And(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
     (itm (And (rd, rs, Reg RegInternal)))
   )
 
 	| Or(rd, rs, Reg rt) ->
 		("or " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
-	| Or(rd, rs, Immediate it) ->
-		("ori " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (soi it))
-  | Or(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Or (rd, rs, Reg RegInternal)))
-  )
-  | Or(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
+	| Or(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
     (itm (Or (rd, rs, Reg RegInternal)))
   )
 
 	| Xor(rd, rs, Reg rt) ->
 		("xor " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
-	| Xor(rd, rs, Immediate it) ->
-		("xori " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (soi it))
-  | Xor(rd, rs, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Xor (rd, rs, Reg RegInternal)))
-  )
-  | Xor(rd, rs, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
+	| Xor(rd, rs, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
     (itm (Xor (rd, rs, Reg RegInternal)))
   )
 
 	| Not(rd, Reg rt) ->
 		("nor " ^ (rtm rd) ^ "," ^ (rtm rt) ^ "," ^ (rtm rt))
-	| Not(rd, Immediate it) -> (
-    (itm (LoadAddr (AImmediate it, RegInternal))) ^
-    (itm (Not (rd, Reg RegInternal)))
-    )
-  | Not(rd, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
-    (itm (Not (rd, Reg RegInternal)))
-  )
-  | Not(rd, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
+	| Not(rd, x) -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
     (itm (Not (rd, Reg RegInternal)))
   )
 
-	| Move(rd, Reg rs) -> ("or " ^ (rtm rd) ^ ",$zero," ^ (rtm rs))
-	| Move(rd, Immediate is) -> ("li " ^ (rtm rd) ^ ",$zero," ^ (soi is))
+  | Move(rd, Reg rs) -> ("or " ^ (rtm rd) ^ ",$zero," ^ (rtm rs))
+  | Move(rd, Immediate is) -> ("li " ^ (rtm rd) ^ "," ^ (soi is))
+  | Move(rd, Label l) -> ("la " ^ (rtm rd) ^ "," ^ l)
   | Move(rd, ArgumentVar off) -> (
-    (itm (LoadWord ((AReg RegArgumentsStart, off), RegInternal))) ^
+    "addi " ^ (rtm RegInternal) ^ "," ^ (rtm RegArgumentsStart) ^ "," ^ (soi off) ^ "\n" ^
     (itm (Move (rd, Reg RegInternal)))
   )
   | Move(rd, LocalVar off) -> (
-    (itm (LoadWord ((AReg RegFramePtr, off+28), RegInternal))) ^
+    "addi " ^ (rtm RegInternal) ^ "," ^ (rtm RegFramePtr) ^ "," ^ (soi (off+28)) ^ "\n" ^
     (itm (Move (rd, Reg RegInternal)))
   )
+  | Move(rd, Dereference a) -> (
+    (itm ( Move (RegInternal, a) )) ^ "\n" ^
+    (itm ( LoadWord (rd, (RegInternal, 0)) ))
+  )
 
-	| LoadWord((AReg rs, offset), rd) ->
-		("lw " ^ (rtm rd) ^ "," ^ (soi offset) ^ "(" ^ (rtm rs) ^ ")")
-	| LoadWord((ALabel l, offset), rd) -> (
-		"la $t3," ^ l ^ "\n" ^
-		(itm (LoadWord ((AReg RegInternal, offset), rd)))
-	)
-	| LoadWord((AImmediate i, offset), rd) -> (
-		"la $t3," ^ (soi i) ^ "\n" ^
-		(itm (LoadWord ((AReg RegInternal, offset), rd)))
-	)
-
-	| StoreWord((AReg rd, offset), rs) ->
-		("sw " ^ (rtm rs) ^ "," ^ (soi offset) ^ "(" ^ (rtm rd) ^ ")")
-	| StoreWord((ALabel l, offset), rs) -> (
-		"la $t3," ^ l ^ "\n" ^
-		(itm (StoreWord ((AReg RegInternal, offset), rs)))
-	)
-	| StoreWord((AImmediate i, offset), rs) -> (
-		"la $t3," ^ (soi i) ^ "\n" ^
-		(itm (StoreWord ((AReg RegInternal, offset), rs)))
+  | LoadWord(rd, (rs, off))  -> ("lw " ^ (rtm rd) ^ "," ^ (soi off) ^ "(" ^ (rtm rs) ^ ")")
+  | StoreWord((rd, off), rs) -> ("sw " ^ (rtm rs) ^ "," ^ (soi off) ^ "(" ^ (rtm rd) ^ ")")
+  
+  | Branch (Reg r) -> ("jr " ^ (rtm r))
+	| Branch x -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
+		(itm (Branch (Reg RegInternal)))
 	)
 
-	| LoadAddr (AReg rs, rd) ->
-		(itm (Move (rd, Reg rs)))
-	| LoadAddr (AImmediate i, r) ->
-		(itm (Move (r, Immediate i)))
-	| LoadAddr (ALabel l, r) ->
-		("la " ^ (rtm r) ^ "," ^ l)
-	
-	| Branch (AReg r) -> ("jr " ^ (rtm r))
-	| Branch (ALabel l) -> ("j " ^ l)
-	| Branch (AImmediate i) -> ("jr " ^ (soi i))
+  | ConditionalBranch(rc, at, af) -> (
+    "bne " ^ (rtm rc) ^ ",$zero,1\n" ^
+    (itm (Branch af)) ^
+    (itm (Branch at))
+  )
 
-	| ConditionalBranch(rc, at, af) -> (
-	  "bne " ^ (rtm rc) ^ ",$zero,1\n" ^
-	  (itm (Branch af)) ^
-	  (itm (Branch at))
-	)
-	
-	| Push r -> (
-		"sw " ^ (rtm r) ^ ", 4($sp)\n" ^
-		"addiu $sp, $sp, 4"
-	)
-	| Pop r -> (
-		"addi $sp, $sp, -4\n" ^
-		"lw " ^ (rtm r) ^ ", 4($sp)"
+  | Push (Reg r) -> (
+    "sw " ^ (rtm r) ^ ", 4($sp)\n" ^
+    "addiu $sp, $sp, 4"
+  )
+	| Push x -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
+		(itm (Push (Reg RegInternal)))
 	)
 
+  | Pop (Reg r) -> (
+    "addi $sp, $sp, -4\n" ^
+    "lw " ^ (rtm r) ^ ", 4($sp)"
+  )
+	| Pop x -> (
+    (itm (Move (RegInternal, x))) ^ "\n" ^
+		(itm (Pop (Reg RegInternal)))
+	)
+
+  | IsNegative (rd, rs) -> (
+    "slti " ^ (rtm rd) ^ "," ^ (rtm rs) ^ ",0"
+  )
+  | IsPositive (rd, rs) -> (
+    "slti " ^ (rtm rd) ^ "," ^ (rtm rs) ^ ",1\n" ^
+    "xori " ^ (rtm rd) ^ "," ^ (rtm rd) ^ ",1"
+  )
+  
 	| Exit -> (
 		"li $v0, 10\n" ^
 		"syscall"

@@ -2,20 +2,18 @@ type reg =
   | RegFramePtr
   | RegStackPtr
 	| RegArgumentsStart
-	(* Ne devrait être utilisé qu'en interne *)
-	| RegInternal
 	| RegTempResult | RegTemp1 | RegTemp2
-
-type address =
-	| AReg of reg
-	| ALabel of string
-	| AImmediate of int
+	(* Ne devrait être utilisé qu'en interne, car sa valeur peut être changé
+     implicitement lors d'une instruction *)
+	| RegInternal
 
 type instruction_arg =
 	| Reg of reg
 	| Immediate of int
+	| Label of string
 	| ArgumentVar of int
 	| LocalVar of int
+  | Dereference of instruction_arg
 
 type instruction =
 	| PushFrame
@@ -37,18 +35,21 @@ type instruction =
 	| Not of reg*instruction_arg 
 
 	| Move      of reg*instruction_arg
-	| StoreWord of (address * int) * reg
-	| LoadWord  of (address * int) * reg
-	| LoadAddr  of address * reg
+	| StoreWord of (reg * int)*reg
+	| LoadWord  of reg*(reg * int)
 
-	| Push of reg
-	| Pop  of reg
+	| Push of instruction_arg
+	| Pop  of instruction_arg
 
-	| ConditionalBranch of reg*address*address
-	| Branch of address
+  (* Vérifie si le second registre est dans -N* *)
+  | IsNegative of reg*reg
+  (* Vérifie si le second registre est dans N* *)
+  | IsPositive of reg*reg
+	| ConditionalBranch of reg*instruction_arg*instruction_arg
+	| Branch of instruction_arg
 	| InlineAssembly of string
 	
-	| CallFunction of address
+	| CallFunction of instruction_arg
 	| Return
 
 	(* Propre au système visé *)
