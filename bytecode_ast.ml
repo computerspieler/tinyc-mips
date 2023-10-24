@@ -2,10 +2,8 @@ type reg =
   | RegFramePtr
   | RegStackPtr
 	| RegArgumentsStart
-	| RegTempResult | RegTemp1 | RegTemp2
-	(* Ne devrait être utilisé qu'en interne, car sa valeur peut être changé
-     implicitement lors d'une instruction *)
-	| RegInternal
+	| RegGenResult | RegGen1 | RegGen2
+	| RegTemp
 
 type instruction_arg =
 	| Reg of reg
@@ -51,9 +49,6 @@ type instruction =
 	
 	| CallFunction of instruction_arg
 	| Return
-
-	(* Propre au système visé *)
-	| Exit
 
 type data_instruction =
 	| DLabel of string

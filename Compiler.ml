@@ -10,19 +10,19 @@
 			Return;
 
 			Label "main";
-			LoadAddr ((AImmediate 32), RegTempResult);
-			LoadAddr ((AImmediate 5), RegTemp1);
-			Add (RegTempResult, RegTempResult, Reg RegTemp1);
-			StoreWord ((ALabel "res0", 0), RegTempResult);
-			Sub (RegTempResult, RegTempResult, Reg RegTemp1);
-			StoreWord ((ALabel "res0", 4), RegTempResult);
-			Mul (RegTempResult, RegTempResult, Reg RegTemp1);
+			LoadAddr ((AImmediate 32), RegGenResult);
+			LoadAddr ((AImmediate 5), RegGen1);
+			Add (RegGenResult, RegGenResult, Reg RegGen1);
+			StoreWord ((ALabel "res0", 0), RegGenResult);
+			Sub (RegGenResult, RegGenResult, Reg RegGen1);
+			StoreWord ((ALabel "res0", 4), RegGenResult);
+			Mul (RegGenResult, RegGenResult, Reg RegGen1);
 
-			LoadAddr (ALabel "res2", RegTemp2);
-			StoreWord ((AReg RegTemp2, 0), RegTempResult);
-			Div (RegTempResult, RegTempResult, Reg RegTemp1);
-			LoadAddr (ALabel "res2", RegTemp2);
-			StoreWord ((AReg RegTemp2, 4), RegTempResult);
+			LoadAddr (ALabel "res2", RegGen2);
+			StoreWord ((AReg RegGen2, 0), RegGenResult);
+			Div (RegGenResult, RegGenResult, Reg RegGen1);
+			LoadAddr (ALabel "res2", RegGen2);
+			StoreWord ((AReg RegGen2, 4), RegGenResult);
 
 			Exit
 		], [

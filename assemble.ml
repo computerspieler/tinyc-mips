@@ -3,10 +3,10 @@ open Bytecode_ast;;
 let reg_to_mips r = match r with 
 	| RegArgumentsStart -> "$a0"
   | RegFramePtr -> "$fp"
-	| RegTempResult -> "$s0"
-	| RegTemp1 -> "$s1"
-	| RegTemp2 -> "$s2"
-	| RegInternal -> "$t3"
+	| RegGenResult -> "$s0"
+	| RegGen1 -> "$s1"
+	| RegGen2 -> "$s2"
+	| RegTemp -> "$t3"
 	| RegStackPtr -> "$sp"
 
 (* Il est important de noter qu'ici, t3 sert de registre temporaire pour les 
@@ -19,8 +19,8 @@ let rec instruction_to_mips (i : instruction) : string =
 	| Label s -> (s ^ ":")
 	| CallFunction (Reg r) -> ("jalr " ^ (rtm r))
 	| CallFunction x -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-    (itm (CallFunction (Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+    (itm (CallFunction (Reg RegTemp)))
   )
 	| Return -> ("jr $ra")
 	| InlineAssembly s -> s
@@ -49,22 +49,23 @@ let rec instruction_to_mips (i : instruction) : string =
 	| Add(rd, rs, Reg rt) ->
 		("add " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
   | Add(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-    (itm (Add (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+    (itm (Add (rd, rs, Reg RegTemp)))
   )
 
 	| Sub(rd, rs, Reg rt) ->
 		("sub " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
 	| Sub(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-		(itm (Sub (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+		(itm (Sub (rd, rs, Reg RegTemp)))
 	)
 
 	| Mul(rd, rs, Reg rt) ->
-		("mult " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
+		("mult " ^ (rtm rs) ^ "," ^ (rtm rt) ^ "\n" ^
+     "mflo " ^ (rtm rd))
 	| Mul(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-		(itm (Mul (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+		(itm (Mul (rd, rs, Reg RegTemp)))
 	)
 
 	| Div(rd, rs, Reg rt) -> (
@@ -72,8 +73,8 @@ let rec instruction_to_mips (i : instruction) : string =
 		"mflo " ^ (rtm rd)
 	)
 	| Div(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-		(itm (Div (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+		(itm (Div (rd, rs, Reg RegTemp)))
 	)
 
 	| Mod(rd, rs, Reg rt) -> (
@@ -81,66 +82,66 @@ let rec instruction_to_mips (i : instruction) : string =
 		"mfhi " ^ (rtm rd)
 	)
 	| Mod(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-		(itm (Mod (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+		(itm (Mod (rd, rs, Reg RegTemp)))
 	)
 
 	| Shl(rd, rs, Reg rt) ->
 		("sllv " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
 	| Shl(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-    (itm (Shl (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+    (itm (Shl (rd, rs, Reg RegTemp)))
   )
    
 	| Shr(rd, rs, Reg rt) ->
 		("slrv " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
 	| Shr(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-    (itm (Shr (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+    (itm (Shr (rd, rs, Reg RegTemp)))
   )
 
 	| And(rd, rs, Reg rt) ->
 		("and " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
 	| And(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-    (itm (And (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+    (itm (And (rd, rs, Reg RegTemp)))
   )
 
 	| Or(rd, rs, Reg rt) ->
 		("or " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
 	| Or(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-    (itm (Or (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+    (itm (Or (rd, rs, Reg RegTemp)))
   )
 
 	| Xor(rd, rs, Reg rt) ->
 		("xor " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
 	| Xor(rd, rs, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-    (itm (Xor (rd, rs, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+    (itm (Xor (rd, rs, Reg RegTemp)))
   )
 
 	| Not(rd, Reg rt) ->
 		("nor " ^ (rtm rd) ^ "," ^ (rtm rt) ^ "," ^ (rtm rt))
 	| Not(rd, x) -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-    (itm (Not (rd, Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+    (itm (Not (rd, Reg RegTemp)))
   )
 
   | Move(rd, Reg rs) -> ("or " ^ (rtm rd) ^ ",$zero," ^ (rtm rs))
   | Move(rd, Immediate is) -> ("li " ^ (rtm rd) ^ "," ^ (soi is))
   | Move(rd, Label l) -> ("la " ^ (rtm rd) ^ "," ^ l)
   | Move(rd, ArgumentVar off) -> (
-    "addi " ^ (rtm RegInternal) ^ "," ^ (rtm RegArgumentsStart) ^ "," ^ (soi off) ^ "\n" ^
-    (itm (Move (rd, Reg RegInternal)))
+    "addi " ^ (rtm RegTemp) ^ "," ^ (rtm RegArgumentsStart) ^ "," ^ (soi off) ^ "\n" ^
+    (itm (Move (rd, Reg RegTemp)))
   )
   | Move(rd, LocalVar off) -> (
-    "addi " ^ (rtm RegInternal) ^ "," ^ (rtm RegFramePtr) ^ "," ^ (soi (off+28)) ^ "\n" ^
-    (itm (Move (rd, Reg RegInternal)))
+    "addi " ^ (rtm RegTemp) ^ "," ^ (rtm RegFramePtr) ^ "," ^ (soi off) ^ "\n" ^
+    (itm (Move (rd, Reg RegTemp)))
   )
   | Move(rd, Dereference a) -> (
-    (itm ( Move (RegInternal, a) )) ^ "\n" ^
-    (itm ( LoadWord (rd, (RegInternal, 0)) ))
+    (itm ( Move (RegTemp, a) )) ^ "\n" ^
+    (itm ( LoadWord (rd, (RegTemp, 0)) ))
   )
 
   | LoadWord(rd, (rs, off))  -> ("lw " ^ (rtm rd) ^ "," ^ (soi off) ^ "(" ^ (rtm rs) ^ ")")
@@ -148,8 +149,8 @@ let rec instruction_to_mips (i : instruction) : string =
   
   | Branch (Reg r) -> ("jr " ^ (rtm r))
 	| Branch x -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-		(itm (Branch (Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+		(itm (Branch (Reg RegTemp)))
 	)
 
   | ConditionalBranch(rc, at, af) -> (
@@ -159,21 +160,21 @@ let rec instruction_to_mips (i : instruction) : string =
   )
 
   | Push (Reg r) -> (
-    "sw " ^ (rtm r) ^ ", 4($sp)\n" ^
-    "addiu $sp, $sp, 4"
+    "sw " ^ (rtm r) ^ ", -4($sp)\n" ^
+    "addi $sp, $sp, -4"
   )
 	| Push x -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-		(itm (Push (Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+		(itm (Push (Reg RegTemp)))
 	)
 
   | Pop (Reg r) -> (
-    "addi $sp, $sp, -4\n" ^
-    "lw " ^ (rtm r) ^ ", 4($sp)"
+    "addiu $sp, $sp, 4\n" ^
+    "lw " ^ (rtm r) ^ ", -4($sp)"
   )
 	| Pop x -> (
-    (itm (Move (RegInternal, x))) ^ "\n" ^
-		(itm (Pop (Reg RegInternal)))
+    (itm (Move (RegTemp, x))) ^ "\n" ^
+		(itm (Pop (Reg RegTemp)))
 	)
 
   | IsNegative (rd, rs) -> (
@@ -184,12 +185,13 @@ let rec instruction_to_mips (i : instruction) : string =
     "xori " ^ (rtm rd) ^ "," ^ (rtm rd) ^ ",1"
   )
   
-	| Exit -> (
-		"li $v0, 10\n" ^
-		"syscall"
-	)
+let mips_text_header =
+  ".text\n" ^
+  "main:\n" ^
+  "jal __func_main\n" ^
+  "li $v0, 10\n" ^
+  "syscall\n"
 
-let mips_text_header = ".text\n"
 let mips_data_header = ".data\n"
 
 let produce_sections ((insts, data) : prog) =

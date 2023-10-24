@@ -32,7 +32,7 @@ type stmt =
 	| Sdowhile of expr * stmt 
 	| Swhile of expr * stmt 
 	| Sif of expr * stmt * stmt 
-	| Sreturn of expr
+	| Sreturn of expr option
 	| Sbreak
 	| Scontinue
 	| SInlineAssembly of string

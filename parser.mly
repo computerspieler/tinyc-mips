@@ -79,31 +79,31 @@ expr:
 		}
 
 %inline binop:
-	| Star					{ Mul }
-	| Div					{ Div }
-	| Plus					{ Add }
-	| Minus					{ Sub }
-	| Percent				{ Mod }
-	| ShiftRight			{ BinShr }
-	| ShiftLeft				{ BinShl }
-	| Ampersand				{ BinAnd }
-	| Pipe					{ BinOr }
-	| AssignEqual			{ Assign }
-	| Greater				{ BoolGreater }
-	| Less					{ BoolLess }
-	| GreaterOrEqual		{ BoolGreaterEq }
-	| LessOrEqual			{ BoolLessEq }
-	| DoubleEqual			{ BoolEq }
-	| NotEqual				{ BoolNeq }
-	| DoubleAmpersand		{ BoolAnd }
-	| DoublePipe			{ BoolOr }
+	| Star					{ Ast.Mul }
+	| Div					{ Ast.Div }
+	| Plus					{ Ast.Add }
+	| Minus					{ Ast.Sub }
+	| Percent				{ Ast.Mod }
+	| ShiftRight			{ Ast.BinShr }
+	| ShiftLeft				{ Ast.BinShl }
+	| Ampersand				{ Ast.BinAnd }
+	| Pipe					{ Ast.BinOr }
+	| AssignEqual			{ Ast.Assign }
+	| Greater				{ Ast.BoolGreater }
+	| Less					{ Ast.BoolLess }
+	| GreaterOrEqual		{ Ast.BoolGreaterEq }
+	| LessOrEqual			{ Ast.BoolLessEq }
+	| DoubleEqual			{ Ast.BoolEq }
+	| NotEqual				{ Ast.BoolNeq }
+	| DoubleAmpersand		{ Ast.BoolAnd }
+	| DoublePipe			{ Ast.BoolOr }
 
 %inline unop:
-	| Not		{ BoolNot }
-	| Tilde		{ BinNot }
-	| Ampersand	{ Reference }
-	| Star		{ Dereference }
-	| Minus		{ Neg }
+	| Not		{ Ast.BoolNot }
+	| Tilde		{ Ast.BinNot }
+	| Ampersand	{ Ast.Reference }
+	| Star		{ Ast.Dereference }
+	| Minus		{ Ast.Neg }
 ;
 
 stmt:
@@ -125,10 +125,11 @@ stmt:
 
 	| KdBreak SemiColon { Sbreak }
 	| KdContinue SemiColon { Scontinue }
-	| KdReturn e=expr SemiColon { Sreturn e }
+	| KdReturn e=expr SemiColon { Sreturn (Some e) }
+	| KdReturn SemiColon { Sreturn None }
 
-	| KdInlineAsmMips Lbrace s=expr_str Rbrace { SInlineAssembly s }
-	| KdInlineAsmMips Lbrace Rbrace { SInlineAssembly "" }
+	| KdInlineAsmMips Lbrace s=expr_str Rbrace SemiColon { SInlineAssembly s }
+	| KdInlineAsmMips Lbrace Rbrace SemiColon { SInlineAssembly "" }
 
 	| t=var_type n=var_names SemiColon { SVarDecl(n, t) }
 
@@ -154,7 +155,7 @@ def:
 			| None -> Dfuncdef(n, t, [], s)
 			| Some a -> Dfuncdef(n, t, a, s)
 		}
-	;
+;
 
 prog: p = def* EOF { p }
 ;

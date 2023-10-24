@@ -1,11 +1,12 @@
 (ocamllex
  (modules lexer))
 (menhir
- (flags --explain)
+ (flags --explain --inspection --table --dump)
  (modules parser))
 
 (executable
- (name Compiler))
+ (name Compiler)
+ (libraries menhirLib))
 (env
  (dev
    (flags (:standard -warn-error -A))
