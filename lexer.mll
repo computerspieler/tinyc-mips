@@ -1,12 +1,19 @@
 {
+  open Lexing
   open Parser
    
-  exception Lexing_error of char
-	
+  exception Lexing_error
+
+  (* Repris du projet ptit python *)	
   let kwd_tbl = ["if", KdIf; "do", KdDo; "while", KdWhile; "int", KdInt;
 	"void", KdVoid; "return", KdReturn; "break", KdBreak;
 	"continue", KdContinue; "else", KdElse; "__mips", KdInlineAsmMips]
   let id_or_kwd s = try List.assoc s kwd_tbl with _ -> Ident s
+
+  let newline lexbuf =
+    let pos = lexbuf.lex_curr_p in
+    lexbuf.lex_curr_p <- 
+      { pos with pos_lnum = pos.pos_lnum + 1; pos_bol = pos.pos_cnum; }
 }
 
 let whitespace = [' ' '\t' '\r' '\n']
@@ -20,9 +27,14 @@ let integer = '-'? digit+
 let frac = '.' integer
 
 rule token = parse
+	| '\n'								{ newline lexbuf; token lexbuf }
 	| whitespace						{ token lexbuf }
-	| "//" _* '\n'						{ token lexbuf }
-	| "/*" _* "*/"						{ token lexbuf }
+	| "//" [^'\n']* '\n'				{ newline lexbuf; token lexbuf }
+	| "/*" ([^'*']|'*'[^'/'])* "*/" as c	
+		{
+			String.iter (fun c -> if c = '\n' then newline lexbuf;) c;
+			token lexbuf
+		}
 
 	| "<<"								{ ShiftLeft }
 	| ">>"								{ ShiftRight }
@@ -80,3 +92,5 @@ rule token = parse
 				) sp in
 			String (String.concat "" sp)
 		}
+
+  | _  { raise Lexing_error }

@@ -65,17 +65,19 @@ expr_args:
 ;
 
 expr:
-	| i=Int						{ Eint i }
-	| s=expr_str				{ Estring s }
-	| i=Ident					{ Eident i }
+	| i=Int						{ Eint i, $startpos }
+	| s=expr_str				{ Estring s, $startpos }
+	| i=Ident					{ Eident i, $startpos }
 	| Lparam e=expr Rparam		{ e }
-	| u=unop e=expr %prec Uunop { Eunop(u, e) }
-	| lhs=expr b=binop rhs=expr { Ebinop(b, lhs, rhs) }
+	| u=unop e=expr %prec Uunop { Eunop(u, e), $startpos }
+	| lhs=expr b=binop rhs=expr { Ebinop(b, lhs, rhs), $startpos }
 	| f=expr Lparam args = expr_args? Rparam
 		{
-			match args with
-			| Some args -> Ecall(f, args)
-			| None -> Ecall(f, [])
+			(
+				match args with
+				| Some args -> Ecall(f, args)
+				| None -> Ecall(f, [])
+			), $startpos
 		}
 
 %inline binop:
@@ -107,38 +109,38 @@ expr:
 ;
 
 stmt:
-	| e=expr SemiColon { Ssimple e }
+	| e=expr SemiColon { Ssimple e, $startpos }
 	| s=stmt_block { s }
 	| KdDo code=stmt_block KdWhile cond=condition SemiColon
-		{ Sdowhile(cond, code) }
+		{ Sdowhile(cond, code), $startpos }
 	| KdWhile cond=condition code=stmt
-		{ Swhile(cond, code) }
+		{ Swhile(cond, code), $startpos }
 
 	(* Solution au problème du "dangling else"
 		reprise de ce blog: https://www.epaperpress.com/lexandyacc/if.html *)
 	| KdIf cond=condition if_code=stmt KdElse else_code=stmt
-		{ Sif(cond, if_code, else_code) }
+		{ Sif(cond, if_code, else_code), $startpos }
 	| KdIf cond=condition code=stmt %prec IfX
-		{ Sif(cond, code, Sblock []) }
+		{ Sif(cond, code, (Sblock [], Lexing.dummy_pos)), $startpos }
 	
 	| SemiColon; s = stmt { s }
 
-	| KdBreak SemiColon { Sbreak }
-	| KdContinue SemiColon { Scontinue }
-	| KdReturn e=expr SemiColon { Sreturn (Some e) }
-	| KdReturn SemiColon { Sreturn None }
+	| KdBreak SemiColon { Sbreak, $startpos }
+	| KdContinue SemiColon { Scontinue, $startpos }
+	| KdReturn e=expr SemiColon { Sreturn (Some e), $startpos }
+	| KdReturn SemiColon { Sreturn None, $startpos }
 
-	| KdInlineAsmMips Lbrace s=expr_str Rbrace SemiColon { SInlineAssembly s }
-	| KdInlineAsmMips Lbrace Rbrace SemiColon { SInlineAssembly "" }
+	| KdInlineAsmMips Lbrace s=expr_str Rbrace SemiColon { SInlineAssembly s, $startpos }
+	| KdInlineAsmMips Lbrace Rbrace SemiColon { SInlineAssembly "", $startpos }
 
-	| t=var_type n=var_names SemiColon { SVarDecl(n, t) }
+	| t=var_type n=var_names SemiColon { SVarDecl(n, t), $startpos }
 
 %inline condition:
 	Lparam cond=expr Rparam	{ cond }
 ;
 
 stmt_block: 
-	Lbrace s = stmt* Rbrace { Sblock s }
+	Lbrace s = stmt* Rbrace { Sblock s, $startpos }
 ;
 
 args_def:
@@ -148,12 +150,14 @@ args_def:
 
 def:
 	| t=var_type n=Ident SemiColon
-		{ Dvardef (n, t) }
+		{ Dvardef (n, t), $startpos }
 	| t=var_type n=Ident Lparam a=args_def? Rparam s=stmt_block
 		{
-			match a with
-			| None -> Dfuncdef(n, t, [], s)
-			| Some a -> Dfuncdef(n, t, a, s)
+			(
+				match a with
+				| None -> Dfuncdef(n, t, [], s)
+				| Some a -> Dfuncdef(n, t, a, s)
+			), $startpos
 		}
 ;
 

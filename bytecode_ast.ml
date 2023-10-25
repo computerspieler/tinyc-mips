@@ -11,7 +11,6 @@ type instruction_arg =
 	| Label of string
 	| ArgumentVar of int
 	| LocalVar of int
-  | Dereference of instruction_arg
 
 type instruction =
 	| PushFrame
@@ -33,11 +32,11 @@ type instruction =
 	| Not of reg*instruction_arg 
 
 	| Move      of reg*instruction_arg
+  
 	| StoreWord of (reg * int)*reg
 	| LoadWord  of reg*(reg * int)
-
-	| Push of instruction_arg
-	| Pop  of instruction_arg
+	| PushWord of instruction_arg
+	| PopWord  of instruction_arg
 
   (* Vérifie si le second registre est dans -N* *)
   | IsNegative of reg*reg

@@ -1,7 +1,7 @@
 open Ast
 open Bytecode_ast
 
-exception CompilerError of string
+exception CompilerError of string * Lexing.position
 
 type global_decl =
 	| VarDecl of var_type
@@ -40,18 +40,13 @@ let rec sizeof t = match t with
 let get_local e name =
   List.find_opt (fun ((n, _), _) -> n=name) e.local_vars
 
-let add_local_vars e t name =
+let add_local_vars e t pos name =
   if get_local e name <> None
-  then raise (CompilerError ("Redefination of variable " ^ name))
+  then raise (CompilerError ("Redefination of variable " ^ name, pos))
   else (
     e.local_vars <- ((name, t), LocalVar e.local_var_stack_ptr)::e.local_vars;
     e.local_var_stack_ptr <- e.local_var_stack_ptr + sizeof t
   )
-
-let is_reference x =
-  match x with
-  | Ref _ -> true
-  | _ -> false
 
 let is_pointer x =
   match x with
@@ -59,20 +54,24 @@ let is_pointer x =
   | Ref (Ptr _) -> true
   | _ -> false
       
+let rec get_pointer_type x =
+  match x with
+  | Ref y -> get_pointer_type y
+  | Ptr y -> y
+  | _ -> failwith "Impossible"
+
+let string_label id =
+  "__str_" ^ (string_of_int id)
+
+let func_label name =
+  "__func_" ^ name
+
 let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
   let globals = Hashtbl.create 100 in
   let label_count = ref 0 in
   let strings = ref [] in
 
   let get_global = Hashtbl.find_opt globals in
-
-  let string_label id =
-    "__str_" ^ (string_of_int id)
-  in
-
-  let func_label name =
-    "__func_" ^ name
-  in
 
   let new_label () = 
     let i = !label_count in
@@ -91,10 +90,10 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     ]
   in
 
-  let rec retrieve_value_from_variable_insts t =
+  let rec retrieve_value_from_variable_insts t reg =
     match t with
     | Ref t ->
-      LoadWord (RegGenResult, (RegGenResult, 0))::(retrieve_value_from_variable_insts t)
+      LoadWord (reg, (reg, 0))::(retrieve_value_from_variable_insts t reg)
     | _ -> []
     in
 
@@ -106,7 +105,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
   in
 
   (* Note de conception: L'évaluation de chaque expression doit être indépendante *)
-  let rec compile_expr env e : (instruction list * var_type) = match e with
+  let rec compile_expr env (e, pos) : (instruction list * var_type) = match e with
     | Eint i -> ([Move (RegGenResult, Immediate i)], Int)
     | Estring s -> begin
       let id = List.length (!strings) in
@@ -123,7 +122,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       )
       | None -> (
         match get_local env n with
-        | None -> raise (CompilerError ("Unknown variable " ^ n))
+        | None -> raise (CompilerError ("Unknown variable " ^ n, pos))
         | Some ((_, t), var) ->
           ([Move (RegGenResult, var)], Ref t)
       )
@@ -138,36 +137,37 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       let (f, t) = compile_expr env f in
       let return_type, func_args_type = match t with
       | Ptr (Func (rt, fat)) -> (rt, fat)
-      | _ -> raise (CompilerError "Invalid function")
+      | _ -> raise (CompilerError ("Invalid function", pos))
       in
 
       let rec check_args_types supposed reality =
         match supposed, reality with
         | [], [] -> ()
-        | _::_, [] -> raise (CompilerError "Too much arguments")
-        | [], _::_ -> raise (CompilerError "Not enough arguments")
+        | _::_, [] -> raise (CompilerError ("Too much arguments", pos))
+        | [], _::_ -> raise (CompilerError ("Not enough arguments", pos))
         | ts::qs, tr::qr when are_same_types ts tr -> check_args_types qs qr
         | ts::_, tr::_ ->
           raise (CompilerError (
             "Invalid argument type, it was supposed to be <" ^
             (string_of_var_type ts) ^ ">, not <" ^
             (string_of_var_type tr) ^ ">"
-          ))
+          , pos))
       in check_args_types func_args_type args_type;
 
       let args_length =
         List.fold_left (fun acc (_, at) -> acc + sizeof at) 0 args in
       (
-        [Push (Reg RegArgumentsStart)]
+        [PushWord (Reg RegArgumentsStart)]
         @ (
           List.fold_left (fun insts (ai, at) ->
-            insts @ ai @ (retrieve_value_from_variable_insts at) @ [Push (Reg RegGenResult)]
+            insts @ ai @ (retrieve_value_from_variable_insts at RegGenResult) @ [PushWord (Reg RegGenResult)]
           ) [] (List.rev args)
+          (* C'est nécéssaire, TODO: Commenter *)
         ) @ f @ [
           Move (RegArgumentsStart, Reg RegStackPtr);
           CallFunction (Reg RegGenResult);
           Add (RegStackPtr, RegStackPtr, Immediate args_length);
-          Pop (Reg RegArgumentsStart);
+          PopWord (Reg RegArgumentsStart);
         ],
         return_type
       )
@@ -187,23 +187,28 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
             , Int
           )
         | BinNot ->
-          (i @ (retrieve_value_from_variable_insts rt) @ [Not (RegGenResult, Reg RegGenResult)], Int)
+          (i @ (retrieve_value_from_variable_insts rt RegGenResult) @ [Not (RegGenResult, Reg RegGenResult)], Int)
         | Dereference ->
           (
-            i @ (retrieve_value_from_variable_insts rt) @ [LoadWord (RegGenResult, (RegGenResult, 0))],
-            match rt with
-            | Ref (Ptr t) -> t
-            | Ptr t -> t
-            | _ -> raise (CompilerError "Too much dereference")
+            i,
+            let rec aux t =
+              match t with
+              | Ref t -> Ref (aux t)
+              | Ptr t -> Ref t
+              | _ -> raise (CompilerError ("Too much dereferences", pos))
+            in aux rt
           )
         | Reference -> (
-          [],
-          match rt with
-          | Ref t -> Ptr t
-          | _ -> raise (CompilerError "Too much reference")
+          i,
+          let rec aux t =
+            match t with
+            | Ref (Ref t) -> Ref (aux (Ref t))
+            | Ref t -> Ptr t
+            | _ -> raise (CompilerError ("Too much references", pos))
+          in aux rt
         )
         | Neg ->
-          ((retrieve_value_from_variable_insts rt) @ [Mul (RegGenResult, RegGenResult, Immediate (-1))], Int)
+          ((retrieve_value_from_variable_insts rt RegGenResult) @ [Mul (RegGenResult, RegGenResult, Immediate (-1))], Int)
       )
     end
 
@@ -215,12 +220,16 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       | _, Void
       | Void, _
       | _, Func(_, _)
-      | Func(_, _), _ -> raise (CompilerError "Invalid type")
-      | Int, _ when op = Assign -> raise (CompilerError "Invalid lhs type")
-      | Ptr t, Ptr t' when t <> t' -> raise (CompilerError "Invalid operation")
+      | Func(_, _), _ -> raise (CompilerError ("Invalid type", pos))
+
+      | Int, _ when op = Assign -> raise (CompilerError ("Invalid lhs type", pos))
+      | Ptr t, Ptr t' when t <> t' -> raise (CompilerError ("Invalid operation", pos))
+
       | Ref t, _ when op = Assign -> t
+      
       (* TODO: En faire un avertissement *)
-      | Ref t, Ref t' when t <> t' -> raise (CompilerError "Invalid operation")
+      | Ref t, Ref t' when t <> t' -> raise (CompilerError ("Invalid operation", pos))
+      
       | Ref t, Ref _ -> t
       | Ptr t, _ -> Ptr t
       | _, Ptr t -> Ptr t
@@ -228,10 +237,28 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       | Int, _ -> Int
       in
 
-
       let operation_inst = match op with
-      | Add -> [Add (RegGenResult, RegGen1, Reg RegGen2)]
-      | Sub -> [Sub (RegGenResult, RegGen1, Reg RegGen2)]
+      | Add -> (
+        (
+          match is_pointer lhs_t, is_pointer rhs_t with
+          | true, true -> []
+          | true, false ->
+            [Mul (
+              RegGen2, RegGen2,
+              Immediate (sizeof (get_pointer_type lhs_t))
+            )]
+          | false, true ->
+            [Mul (
+              RegGen1, RegGen1,
+              Immediate (sizeof (get_pointer_type rhs_t))
+            )]
+          | false, false -> []
+        )
+        @ [Add (RegGenResult, RegGen1, Reg RegGen2)]
+      )
+      | Sub -> (
+        [Sub (RegGenResult, RegGen1, Reg RegGen2)]
+      )
       | Mul -> [Mul (RegGenResult, RegGen1, Reg RegGen2)]
       | Div -> [Div (RegGenResult, RegGen1, Reg RegGen2)]
       | Mod -> [Mod (RegGenResult, RegGen1, Reg RegGen2)]
@@ -283,7 +310,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       | Assign -> (
         match lhs_t with
         | Int | Void | Func (_, _) ->
-          raise (CompilerError "Can't assign a value")
+          raise (CompilerError ("Can't assign a value", pos))
         | Ref _ | Ptr _ -> 
           [Move (RegGenResult, Reg RegGen2);
           StoreWord ((RegGen1, 0), RegGenResult)]
@@ -291,21 +318,19 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       in
 
       let retrieve_value_from_lhs =
-        if is_reference lhs_t && op <> Assign
-          then [LoadWord (RegGen1, (RegGen1, 0))]
+        if op <> Assign
+          then (retrieve_value_from_variable_insts lhs_t RegGen1)
           else []
         in
       let retrieve_value_from_rhs =
-        if is_reference rhs_t
-          then [LoadWord (RegGen2, (RegGen2, 0))]
-          else []
+        retrieve_value_from_variable_insts rhs_t RegGen2
         in
 
       (
-        lhs_insts @ [Push (Reg RegGenResult)]
+        lhs_insts @ [PushWord (Reg RegGenResult)]
         @ rhs_insts @ [
           Move (RegGen2, Reg RegGenResult);
-          Pop (Reg RegGen1)
+          PopWord (Reg RegGen1)
         ]
         @ retrieve_value_from_lhs
         @ retrieve_value_from_rhs
@@ -315,24 +340,28 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     end
   in
 
-  let rec compile_stmt env s : (instruction list * var_type) = match s with
+  let rec compile_stmt env (s, pos) : (instruction list * var_type) = match s with
   | Sbreak when not env.in_loop -> 
-    raise (CompilerError "Can't use a \"break\" statement outside a loop")
+    raise (CompilerError ("Can't use a \"break\" statement outside a loop", pos))
   | Scontinue when not env.in_loop -> 
-    raise (CompilerError "Can't use a \"continue\" statement outside a loop")
+    raise (CompilerError ("Can't use a \"continue\" statement outside a loop", pos))
   
   | Ssimple e -> compile_expr env e
   | SVarDecl (var_names, t) -> begin
     match t with
     | Int | Ptr _ -> (
-      List.iter (add_local_vars env t) var_names;
+      List.iter (add_local_vars env t pos) var_names;
       ([], Void)
     )
-    | Void -> raise (CompilerError "Can't generate void variables")
+    | Void -> raise (CompilerError ("Can't generate void variables", pos))
     | _ -> failwith "Unsupported"
   end
 
-  | SInlineAssembly s -> ([InlineAssembly s], Void)
+  (* On pourrait croire que je prends trop de précautions, mais comme 
+     des registres vitaux peuvent être amenés à être touché
+     (RegFramePtr RegArgumentsStart) notamment, il est nécéssaire
+     de les sauvegarder *)
+  | SInlineAssembly s -> ([PushFrame; InlineAssembly s; PopFrame], Void)
 
   | Sif (cond, stmt_true, stmt_false) -> begin
     let lt = new_label () in
@@ -343,11 +372,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     let sti, _ = compile_stmt env stmt_true in
     let sfi, _ = compile_stmt env stmt_false in
     
-    let ce = ce @ (
-      if is_reference ct
-      then [LoadWord (RegGenResult, (RegGenResult, 0))]
-      else []
-    ) in
+    let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
     
     (* TODO: Types *)
     (
@@ -370,11 +395,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     let sbi, _ = compile_stmt env' block in
     env.local_var_stack_ptr <- env'.local_var_stack_ptr;
     
-    let ce = ce @ (
-      if is_reference ct
-      then [LoadWord (RegGenResult, (RegGenResult, 0))]
-      else []
-    ) in
+    let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
     
     (* TODO: Types *)
     (
@@ -403,11 +424,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
   | Sreturn None -> ([PopFrame; Return], Void)
   | Sreturn (Some e) ->
     let i, t = compile_expr env e in
-    let i = i @ (
-      if is_reference t
-      then [LoadWord (RegGenResult, (RegGenResult, 0))]
-      else []
-    ) in
+    let i = i @ (retrieve_value_from_variable_insts t RegGenResult) in
     (* TODO: Check type *)
     (i @
       [Move (RegTemp, Reg RegGenResult);
@@ -415,12 +432,12 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
        Move (RegGenResult, Reg RegTemp);
        Return
       ], Int)
-  | _ -> raise (CompilerError "Unsupported statement")
+  | _ -> raise (CompilerError ("Unsupported statement", pos))
   in
 
-  let rec aux prg = match prg with
+  let rec aux (prg : Ast.prog) = match prg with
   | [] -> ([], [])
-  | Dfuncdef (name, returntype, args, code) :: q -> begin
+  | (Dfuncdef (name, returntype, args, code), pos) :: q -> begin
     let at = List.map (fun a ->
         match a with
         | Val (_, t) -> t
@@ -445,7 +462,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     } in
     let code, codereturntype = compile_stmt env code in
     if codereturntype <> returntype
-    then raise (CompilerError "Incompatible return type");
+    then raise (CompilerError ("Incompatible return type", pos));
     let txt, dt = aux q in
     (
       Label (func_label name)
@@ -456,9 +473,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     )
   end
 
-  | Dvardef (_, Void)::_ -> 
-    raise (CompilerError "Invalid type for variable")
-  | Dvardef (name, vartype)::q -> (
+  | (Dvardef (_, Void), pos)::_ -> 
+    raise (CompilerError ("Invalid type for variable", pos))
+  | (Dvardef (name, vartype), _)::q -> (
     Hashtbl.add globals name (VarDecl vartype);
     let txt, dt = aux q in
     (* TODO: Changer ça quand on aura d'autre types *)

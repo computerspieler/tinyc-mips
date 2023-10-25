@@ -43,7 +43,7 @@ let rec instruction_to_mips (i : instruction) : string =
 		"lw $a1, -16($sp)\n" ^
 		"lw $s0, -12($sp)\n" ^
 		"lw $s1,  -8($sp)\n" ^
-		"lw $s2,  -4($sp)\n"
+		"lw $s2,  -4($sp)"
 	)
 
 	| Add(rd, rs, Reg rt) ->
@@ -139,10 +139,6 @@ let rec instruction_to_mips (i : instruction) : string =
     "addi " ^ (rtm RegTemp) ^ "," ^ (rtm RegFramePtr) ^ "," ^ (soi off) ^ "\n" ^
     (itm (Move (rd, Reg RegTemp)))
   )
-  | Move(rd, Dereference a) -> (
-    (itm ( Move (RegTemp, a) )) ^ "\n" ^
-    (itm ( LoadWord (rd, (RegTemp, 0)) ))
-  )
 
   | LoadWord(rd, (rs, off))  -> ("lw " ^ (rtm rd) ^ "," ^ (soi off) ^ "(" ^ (rtm rs) ^ ")")
   | StoreWord((rd, off), rs) -> ("sw " ^ (rtm rs) ^ "," ^ (soi off) ^ "(" ^ (rtm rd) ^ ")")
@@ -159,22 +155,22 @@ let rec instruction_to_mips (i : instruction) : string =
     (itm (Branch at))
   )
 
-  | Push (Reg r) -> (
+  | PushWord (Reg r) -> (
     "sw " ^ (rtm r) ^ ", -4($sp)\n" ^
     "addi $sp, $sp, -4"
   )
-	| Push x -> (
+	| PushWord x -> (
     (itm (Move (RegTemp, x))) ^ "\n" ^
-		(itm (Push (Reg RegTemp)))
+		(itm (PushWord (Reg RegTemp)))
 	)
 
-  | Pop (Reg r) -> (
+  | PopWord (Reg r) -> (
     "addiu $sp, $sp, 4\n" ^
     "lw " ^ (rtm r) ^ ", -4($sp)"
   )
-	| Pop x -> (
+	| PopWord x -> (
     (itm (Move (RegTemp, x))) ^ "\n" ^
-		(itm (Pop (Reg RegTemp)))
+		(itm (PopWord (Reg RegTemp)))
 	)
 
   | IsNegative (rd, rs) -> (
@@ -202,7 +198,7 @@ let produce_sections ((insts, data) : prog) =
 	let data =
 		List.fold_left (fun acc x -> match x with
 			| DLabel s -> (acc ^ s ^ ":\n")
-			| DString s -> (acc ^ ".asciiz " ^ s ^ "\n")
+			| DString s -> (acc ^ ".asciiz \"" ^ s ^ "\"\n")
 			| DWord i -> (acc ^ ".word " ^ (string_of_int i) ^ "\n")
 		) mips_data_header data
 	in (text ^ data)

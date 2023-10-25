@@ -1,39 +1,3 @@
-(*
-	open Assemble
-	
-	let s =
-		produce_sections ([
-			Label "f";
-			PushFrame;
-			
-			PopFrame;
-			Return;
-
-			Label "main";
-			LoadAddr ((AImmediate 32), RegGenResult);
-			LoadAddr ((AImmediate 5), RegGen1);
-			Add (RegGenResult, RegGenResult, Reg RegGen1);
-			StoreWord ((ALabel "res0", 0), RegGenResult);
-			Sub (RegGenResult, RegGenResult, Reg RegGen1);
-			StoreWord ((ALabel "res0", 4), RegGenResult);
-			Mul (RegGenResult, RegGenResult, Reg RegGen1);
-
-			LoadAddr (ALabel "res2", RegGen2);
-			StoreWord ((AReg RegGen2, 0), RegGenResult);
-			Div (RegGenResult, RegGenResult, Reg RegGen1);
-			LoadAddr (ALabel "res2", RegGen2);
-			StoreWord ((AReg RegGen2, 4), RegGenResult);
-
-			Exit
-		], [
-			DLabel "res0"; DWord 0;
-			DLabel "res1"; DWord 0;
-			DLabel "res2"; DWord 0;
-			DLabel "res3"; DWord 0;
-		])
-		in print_string s
- *)
-
 (* Repris du project PtitPython *)
 let () =
 	(* Vérification de la ligne de commande *)
@@ -42,16 +6,17 @@ let () =
 		exit 1
 	);
 
+  let ifile =
+    if Array.length Sys.argv > 1
+    then open_in Sys.argv.(1)
+    else stdin 
+    in
+  let buf = Lexing.from_channel ifile in
 	try (
-		let ifile =
-			if Array.length Sys.argv > 1
-			then open_in Sys.argv.(1)
-			else stdin 
-			in
-		let ast = (Parser.prog Lexer.token (Lexing.from_channel ifile)) in
+    let ast = (Parser.prog Lexer.token buf) in
 		if ifile <> stdin
 			then close_in ifile;
-		let output = Assemble.produce_sections (Compile.compile_prog ast) in
+		let output = Mips.produce_sections (Compile.compile_prog ast) in
 		let ofile =
 			if Array.length Sys.argv > 2
 			then open_out Sys.argv.(2)
@@ -61,6 +26,22 @@ let () =
 		if ofile <> stdout
 		then close_out ofile;
 	) with
-		| Lexer.Lexing_error _ -> failwith "Lexer error"
+  | Lexer.Lexing_error -> (
+    let pos = Lexing.lexeme_start_p buf in
+    Printf.fprintf stderr "[Lexing error at line %d; column %d]\n"
+      pos.pos_lnum (pos.pos_cnum-pos.pos_bol+1);
+    exit 1
+  )
+  | Parser.Error -> (
+    let pos = Lexing.lexeme_start_p buf in
+    Printf.fprintf stderr "[Parsing error at line %d; column %d]\n"
+      pos.pos_lnum (pos.pos_cnum-pos.pos_bol+1);
+    exit 1
+  )
+  | Compile.CompilerError (msg, pos) -> (
+    Printf.fprintf stderr "[Compiling error at line %d; column %d] %s\n"
+      pos.pos_lnum (pos.pos_cnum-pos.pos_bol+1) msg;
+      exit 1
+  )
 	
 

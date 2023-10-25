@@ -1,3 +1,5 @@
+(* Structure reprise et adapté du projet ptit python *)	
+
 type binop =
 	| Add | Sub | Mul | Div | Mod | BinAnd | BinOr
 	| BoolAnd | BoolOr | BoolEq | BoolNeq | BoolGreater
@@ -7,7 +9,8 @@ type binop =
 type unop =
 	| BinNot | BoolNot | Dereference | Reference | Neg
 
-type expr =
+type expr = expr_node*Lexing.position
+and expr_node =
 	| Ebinop of binop * expr * expr
 	| Eunop of unop * expr
 	| Eident of string
@@ -25,7 +28,8 @@ type var = string * var_type
 type arg = 
 	| Val of var
 
-type stmt =
+type stmt = stmt_node*Lexing.position
+and stmt_node =
 	| Ssimple of expr
 	| SVarDecl of string list * var_type
 	| Sblock of stmt list
@@ -41,5 +45,5 @@ type def =
 	| Dfuncdef of string * var_type * arg list * stmt
 	| Dvardef of string * var_type
 
-type prog = def list
+type prog = (def * Lexing.position) list
 
