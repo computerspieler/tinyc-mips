@@ -27,29 +27,27 @@ void print_string(int* s)
 	return;
 }
 
+int read_int()
+{
+	int x;
+
+	__mips {
+		"or $s0, $zero, $fp\n"
+		"li $v0, 5\n"
+		"syscall\n"
+		"sw $v0, 0($s0)\n"
+	};
+
+	return x;
+}
+
 void main() {
-	int a;
-	int* b;
-	int** c;
-	int*** d;
-	int**** e;
+	int x;
 
-//s
-/*d
-d
-*/
-
-	b = &a;
-	c = &b;
-	d = &c;
-	e = &d;
-
-	__mips { "\n" };
-	
-	d = &*d + 1;
-	
-	print_string("Value of 5*5: ");
-	print_int(square(5));
+	print_string("x?\n");
+	x = read_int();
+	print_string("Value of x*x: ");
+	print_int(square(x));
 
 	return;
 }

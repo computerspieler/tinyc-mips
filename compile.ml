@@ -16,6 +16,25 @@ type env = {
   function_name : string;
 }
 
+let parse_sequences s =
+  let sp = String.split_on_char '\\' s in
+  let sp = List.mapi (fun i s ->
+    if i = 0 then s
+    else
+      (* Si on a une chaine de caractère de longueur 0, cela
+         veut dire que l'on est forcément coincé entre 2 \
+         grâce à la définition d'une chaine de caractère *)
+      if String.length s = 0 then "\\"
+      else (
+        match s.[0] with
+        | 'n' -> "\n" ^ (String.sub s 1 (String.length s - 1))
+        | 't' -> "\t" ^ (String.sub s 1 (String.length s - 1))
+        (* TODO: Avertissement si inconnu *)
+        | _ -> ("\\" ^ s)
+      )
+    ) sp in
+  (String.concat "" sp)
+
 let rec string_of_var_type t = match t with
   | Void -> "void"
   | Int -> "int"
@@ -368,7 +387,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
      des registres vitaux peuvent être amenés à être touché
      (RegFramePtr RegArgumentsStart) notamment, il est nécéssaire
      de les sauvegarder *)
-  | SInlineAssembly s -> ([PushFrame; InlineAssembly s; PopFrame], Void)
+  | SInlineAssembly s -> ([InlineAssembly (parse_sequences s)], Void)
 
   | Sif (cond, stmt_true, stmt_false) -> begin
     let lt = new_label () in
@@ -516,7 +535,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       List.concat (
         List.mapi
         (fun i s -> [DLabel (string_label i); DString s])
-        (!strings)
+        (List.rev (!strings))
       )
     ) @ data
   )
