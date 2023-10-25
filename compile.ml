@@ -187,7 +187,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
             , Int
           )
         | BinNot ->
-          (i @ (retrieve_value_from_variable_insts rt RegGenResult) @ [Not (RegGenResult, Reg RegGenResult)], Int)
+          (i @ 
+            (retrieve_value_from_variable_insts rt RegGenResult) @
+            [Not (RegGenResult, Reg RegGenResult)], Int)
         | Dereference ->
           (
             i,
@@ -208,7 +210,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
           in aux rt
         )
         | Neg ->
-          ((retrieve_value_from_variable_insts rt RegGenResult) @ [Mul (RegGenResult, RegGenResult, Immediate (-1))], Int)
+          ((retrieve_value_from_variable_insts rt RegGenResult) @
+            [Mul (RegGenResult, RegGenResult, Immediate (-1))], Int)
       )
     end
 
@@ -345,7 +348,11 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     raise (CompilerError ("Can't use a \"break\" statement outside a loop", pos))
   | Scontinue when not env.in_loop -> 
     raise (CompilerError ("Can't use a \"continue\" statement outside a loop", pos))
-  
+
+  | Sbreak -> ([Branch (Label env.loop_label_end)], Void)
+  (* TODO: For loop *)
+  | Scontinue -> ([Branch (Label env.loop_label_start)], Void)
+
   | Ssimple e -> compile_expr env e
   | SVarDecl (var_names, t) -> begin
     match t with
@@ -399,9 +406,30 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     
     (* TODO: Types *)
     (
-      [Label ls] @ ce @
+      Label ls :: ce @
       [ConditionalBranch (RegGenResult, Label lt, Label lf); Label lt] @
       sbi @ [Branch (Label ls); Label lf]
+      , Void
+    )
+  end
+
+  | Sdowhile (cond, block) -> begin
+    let ls = new_label () in
+    let ln = new_label () in
+    let ce, ct = compile_expr env cond in
+    
+    let env' = 
+      {env with in_loop = true; loop_label_start = ls; loop_label_end = ln}
+      in
+    let sbi, _ = compile_stmt env' block in
+    env.local_var_stack_ptr <- env'.local_var_stack_ptr;
+    
+    let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
+    
+    (* TODO: Types *)
+    (
+      Label ls :: sbi @ ce @
+      [ConditionalBranch (RegGenResult, Label ls, Label ln); Label ln]
       , Void
     )
   end
@@ -432,7 +460,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
        Move (RegGenResult, Reg RegTemp);
        Return
       ], Int)
-  | _ -> raise (CompilerError ("Unsupported statement", pos))
   in
 
   let rec aux (prg : Ast.prog) = match prg with
