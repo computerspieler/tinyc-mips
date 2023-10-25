@@ -31,8 +31,8 @@ type instruction =
 	| Xor of reg*reg*instruction_arg 
 	| Not of reg*instruction_arg 
 
-	| Move      of reg*instruction_arg
-  
+	| Move of reg*instruction_arg
+
 	| StoreWord of (reg * int)*reg
 	| LoadWord  of reg*(reg * int)
 	| PushWord of instruction_arg

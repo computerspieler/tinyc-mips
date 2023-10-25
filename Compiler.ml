@@ -1,14 +1,20 @@
 (* Repris du project PtitPython *)
 let () =
 	(* Vérification de la ligne de commande *)
-	if Array.length Sys.argv > 3 then (
-		Printf.eprintf "usage: compiler [Input file] [Output file]\n" ;
+	if Array.length Sys.argv > 4 || Array.length Sys.argv < 3 then (
+		Printf.eprintf "usage: compiler [Architecture] [Input file] [Output file]\n" ;
 		exit 1
 	);
 
+  let assemble =
+    match Sys.argv.(1) with
+    | "mips" -> Mips.produce_sections
+    | "bytecode" -> Bytecode.produce_sections
+    | _ -> failwith ("Unknown architecture " ^ Sys.argv.(1))
+    in
   let ifile =
-    if Array.length Sys.argv > 1
-    then open_in Sys.argv.(1)
+    if Array.length Sys.argv > 2
+    then open_in Sys.argv.(2)
     else stdin 
     in
   let buf = Lexing.from_channel ifile in
@@ -16,10 +22,10 @@ let () =
     let ast = (Parser.prog Lexer.token buf) in
 		if ifile <> stdin
 			then close_in ifile;
-		let output = Mips.produce_sections (Compile.compile_prog ast) in
+		let output = assemble (Compile.compile_prog ast) in
 		let ofile =
-			if Array.length Sys.argv > 2
-			then open_out Sys.argv.(2)
+			if Array.length Sys.argv > 3
+			then open_out Sys.argv.(3)
 			else stdout
 			in
 		Printf.fprintf ofile "%s\n" output;
@@ -43,5 +49,4 @@ let () =
       pos.pos_lnum (pos.pos_cnum-pos.pos_bol+1) msg;
       exit 1
   )
-	
 
