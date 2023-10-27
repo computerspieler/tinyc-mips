@@ -51,11 +51,6 @@ var_type:
 	| v=var_type Star { Ast.Ptr v }
 ;
 
-var_names:
-	| n = Ident { [n] }
-	| n = Ident Comma next=var_names { n::next }
-;
-
 expr_str:
 	| l = String+ { List.fold_left (^) "" l }
 
@@ -108,6 +103,17 @@ expr:
 	| Minus		{ Ast.Neg }
 ;
 
+var_def:
+	| n = Ident
+		{ [n, None] }
+	| n = Ident AssignEqual e=expr
+		{ [n, Some e] }
+	| n = Ident Comma next=var_def
+		{ (n, None)::next }
+	| n = Ident AssignEqual e=expr Comma next=var_def
+		{ (n, Some e)::next }
+;
+
 stmt:
 	| e=expr SemiColon { Ssimple e, $startpos }
 	| s=stmt_block { s }
@@ -133,7 +139,7 @@ stmt:
 	| KdInlineAsmMips Lbrace s=expr_str Rbrace SemiColon { SInlineAssembly s, $startpos }
 	| KdInlineAsmMips Lbrace Rbrace SemiColon { SInlineAssembly "", $startpos }
 
-	| t=var_type n=var_names SemiColon { SVarDecl(n, t), $startpos }
+	| t=var_type d=var_def SemiColon {(SVarDecl(d, t), $startpos)}
 
 %inline condition:
 	Lparam cond=expr Rparam	{ cond }

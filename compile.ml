@@ -384,11 +384,26 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
   | Scontinue -> ([Branch (Label env.loop_label_for_continue)], Void)
 
   | Ssimple e -> compile_expr env e
-  | SVarDecl (var_names, t) -> begin
+  | SVarDecl (var_def, t) -> begin
+    let var_names = List.map (fun (n, _) -> n) var_def in
     match t with
     | Int | Ptr _ -> (
       List.iter (add_local_vars env t pos) var_names;
-      ([], Void)
+      let assignments = 
+        List.filter_map (fun (n, e) ->
+          match e with
+          | None -> None
+          | Some e -> Some (
+            Ssimple (
+              Ebinop (
+                Assign,
+                (Eident n, pos), e
+              ), pos
+            ), pos
+          )
+        ) var_def
+        in
+      compile_stmt env (Sblock assignments, pos)
     )
     | Void -> raise (CompilerError ("Can't generate void variables", pos))
     | _ -> failwith "Unsupported"
@@ -503,20 +518,22 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let block = cut_after_return block in
     let block = block @ (
       if not (check_for_return block) && env.check_for_return
-      then
-        if env.function_return_type = Void
-        then [(Sreturn None, Lexing.dummy_pos)]
-        else raise (CompilerError ("Missing an unavoidable return statement", pos))
-      else []
+      then (
+        match env.function_return_type with
+        | Void -> [(Sreturn None, pos)]
+        | Int | Ptr _ -> (
+          add_warning
+            "Missing an unavoidable return statement, add a \"return 0\" at the end" pos;
+          [(Sreturn (Some (Eint 0, pos)), pos)]
+        )
+        | _ -> raise (CompilerError ("Missing an unavoidable return statement", pos))
+      ) else []
     ) in
 
     (* On limite la recherche de return au premier bloc étudié
        i.e, le bloc décrivant une fonction *)
-    let env =
-      if env.check_for_return
-      then {env with check_for_return = false}
-      else env
-      in
+    if env.check_for_return
+    then env.check_for_return <- false;
 
     let insts_with_type = List.map (compile_stmt env) block in
     if insts_with_type = []

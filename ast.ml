@@ -31,7 +31,7 @@ type arg =
 type stmt = stmt_node*Lexing.position
 and stmt_node =
 	| Ssimple of expr
-	| SVarDecl of string list * var_type
+	| SVarDecl of (string * expr option) list * var_type
 	| Sblock of stmt list
 	| Sdowhile of expr * stmt 
 	| Swhile of expr * stmt 

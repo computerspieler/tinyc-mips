@@ -25,7 +25,7 @@ let () =
     
     let insts, warnings = Compile.compile_prog ast in
     List.iter (fun ((msg, pos) : Compile.warning) ->
-      Printf.printf "[Warning at line %d; column %d] %s"
+      Printf.printf "[Warning at line %d; column %d] %s\n%!"
         pos.pos_lnum (pos.pos_cnum-pos.pos_bol+1) msg;
     ) warnings;
 
