@@ -1,6 +1,7 @@
 open Ast
 open Bytecode_ast
 
+type warning = string * Lexing.position
 exception CompilerError of string * Lexing.position
 
 type global_decl =
@@ -11,29 +12,11 @@ type env = {
   mutable local_vars : (var*instruction_arg) list;
   mutable local_var_stack_ptr : int;
   in_loop : bool;
-  loop_label_start : string;
+  loop_label_for_continue : string;
   loop_label_end : string;
-  function_name : string;
+  function_return_type : var_type;
+  mutable check_for_return : bool;
 }
-
-let parse_sequences s =
-  let sp = String.split_on_char '\\' s in
-  let sp = List.mapi (fun i s ->
-    if i = 0 then s
-    else
-      (* Si on a une chaine de caractère de longueur 0, cela
-         veut dire que l'on est forcément coincé entre 2 \
-         grâce à la définition d'une chaine de caractère *)
-      if String.length s = 0 then "\\"
-      else (
-        match s.[0] with
-        | 'n' -> "\n" ^ (String.sub s 1 (String.length s - 1))
-        | 't' -> "\t" ^ (String.sub s 1 (String.length s - 1))
-        (* TODO: Avertissement si inconnu *)
-        | _ -> ("\\" ^ s)
-      )
-    ) sp in
-  (String.concat "" sp)
 
 let rec string_of_var_type t = match t with
   | Void -> "void"
@@ -85,10 +68,38 @@ let string_label id =
 let func_label name =
   "__func_" ^ name
 
-let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
+let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
   let globals = Hashtbl.create 100 in
   let label_count = ref 0 in
   let strings = ref [] in
+  let warnings = ref [] in
+
+
+  let add_warning msg pos =
+    warnings := (msg, pos) :: !warnings;
+  in
+
+  let parse_sequences s pos =
+    let sp = String.split_on_char '\\' s in
+    let sp = List.mapi (fun i s ->
+      if i = 0 then s
+      else
+        (* Si on a une chaine de caractère de longueur 0, cela
+          veut dire que l'on est forcément coincé entre 2 \
+          grâce à la définition d'une chaine de caractère *)
+        if String.length s = 0 then "\\"
+        else (
+          match s.[0] with
+          | 'n' -> "\n" ^ (String.sub s 1 (String.length s - 1))
+          | 't' -> "\t" ^ (String.sub s 1 (String.length s - 1))
+          | _ -> (
+            add_warning "Unknown sequence in a string\n" pos;
+            "\\" ^ s
+          )
+        )
+      ) sp in
+    (String.concat "" sp)
+  in
 
   let get_global = Hashtbl.find_opt globals in
 
@@ -97,6 +108,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     incr label_count; "__L_" ^ (string_of_int i)
   in
 
+  (* Va se charger de générer les instructions pour
+     convertir l'entier dans reg en un booléen *)
   let bool_of_int reg =
     let lbl_if_non_zero = new_label () in
     let lbl_if_zero = new_label () in
@@ -129,7 +142,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     | Estring s -> begin
       let id = List.length (!strings) in
       strings := s::(!strings);
-      (*TODO: Type char*)
       ([Move (RegGenResult, Label (string_label id))], Ptr Int)
     end
     | Eident n -> begin
@@ -361,7 +373,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       )
     end
   in
-
+    
   let rec compile_stmt env (s, pos) : (instruction list * var_type) = match s with
   | Sbreak when not env.in_loop -> 
     raise (CompilerError ("Can't use a \"break\" statement outside a loop", pos))
@@ -369,8 +381,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     raise (CompilerError ("Can't use a \"continue\" statement outside a loop", pos))
 
   | Sbreak -> ([Branch (Label env.loop_label_end)], Void)
-  (* TODO: For loop *)
-  | Scontinue -> ([Branch (Label env.loop_label_start)], Void)
+  | Scontinue -> ([Branch (Label env.loop_label_for_continue)], Void)
 
   | Ssimple e -> compile_expr env e
   | SVarDecl (var_names, t) -> begin
@@ -387,7 +398,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
      des registres vitaux peuvent être amenés à être touché
      (RegFramePtr RegArgumentsStart) notamment, il est nécéssaire
      de les sauvegarder *)
-  | SInlineAssembly s -> ([InlineAssembly (parse_sequences s)], Void)
+  | SInlineAssembly s -> ([InlineAssembly (parse_sequences s pos)], Void)
 
   | Sif (cond, stmt_true, stmt_false) -> begin
     let lt = new_label () in
@@ -416,14 +427,18 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     let ce, ct = compile_expr env cond in
     
     let env' = 
-      {env with in_loop = true; loop_label_start = ls; loop_label_end = lf}
+      {env with
+          in_loop = true;
+          loop_label_for_continue = ls;
+          loop_label_end = lf;
+          check_for_return = false
+      }
       in
     let sbi, _ = compile_stmt env' block in
     env.local_var_stack_ptr <- env'.local_var_stack_ptr;
     
     let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
     
-    (* TODO: Types *)
     (
       Label ls :: ce @
       [ConditionalBranch (RegGenResult, Label lt, Label lf); Label lt] @
@@ -438,7 +453,11 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
     let ce, ct = compile_expr env cond in
     
     let env' = 
-      {env with in_loop = true; loop_label_start = ls; loop_label_end = ln}
+      {env with
+        in_loop = true;
+        loop_label_for_continue = ls;
+        loop_label_end = ln;
+        check_for_return = false}
       in
     let sbi, _ = compile_stmt env' block in
     env.local_var_stack_ptr <- env'.local_var_stack_ptr;
@@ -454,36 +473,92 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
   end
 
   | Sblock block ->
+    (* On coupe le reste du code après le return, car c'est la dernière
+       instruction qui va définir le type du bloc *)
+    let rec check_for_return l =
+      match l with
+      | [] -> false
+      | (Sblock b, _) :: q ->
+          (check_for_return b) || (check_for_return q)
+      | (Sdowhile (_, s), _) :: q ->
+          (check_for_return [s]) || (check_for_return q)
+      | (Sif (_, st, sf), _) :: q ->
+          ((check_for_return [st]) && (check_for_return [sf])) || (check_for_return q)
+      | (Sreturn _, _) :: _ -> true
+      | _ :: q -> check_for_return q
+      in
+
+    let rec cut_after_return l =
+      match l with
+      | [] -> []
+      | (t, pos) :: q when check_for_return [(t, pos)] -> (
+        if q <> []
+        then add_warning
+          "There's code after an unavoidable return statement\n" pos;
+        (t, pos)::[]
+      )
+      | t :: q -> t::(cut_after_return q)
+      in
+
+    let block = cut_after_return block in
+    let block = block @ (
+      if not (check_for_return block) && env.check_for_return
+      then
+        if env.function_return_type = Void
+        then [(Sreturn None, Lexing.dummy_pos)]
+        else raise (CompilerError ("Missing an unavoidable return statement", pos))
+      else []
+    ) in
+
+    (* On limite la recherche de return au premier bloc étudié
+       i.e, le bloc décrivant une fonction *)
+    let env =
+      if env.check_for_return
+      then {env with check_for_return = false}
+      else env
+      in
+
     let insts_with_type = List.map (compile_stmt env) block in
     if insts_with_type = []
-      then ([], Void)
-      else 
-        let insts = List.map (fun (i, _) -> i) insts_with_type in
-        (
-          List.flatten insts
-          , List.hd (
-              List.rev (
-                List.map (fun (_, t) -> t) insts_with_type
-              )
-            )
-        )
+    then ([], Void)
+    else 
+      let insts = List.map (fun (i, _) -> i) insts_with_type in
+      (
+        List.flatten insts
+        , List.hd (
+            List.rev_map (fun (_, t) -> t) insts_with_type
+          )
+      )
 
+  | Sreturn None when env.function_return_type <> Void ->
+      raise (CompilerError ("Incompatible return type", pos)) 
   | Sreturn None -> ([PopFrame; Return], Void)
   | Sreturn (Some e) ->
     let i, t = compile_expr env e in
     let i = i @ (retrieve_value_from_variable_insts t RegGenResult) in
-    (* TODO: Check type *)
+
+    (* Ça va retirer tout les ref superflus *)
+    let rec aux t =
+      match t with
+      | Ref t -> aux t
+      | _ -> t
+    in
+    let t = aux t in
+
+    if t <> env.function_return_type
+    then raise (CompilerError ("Incompatible return type", pos));
+
     (i @
       [Move (RegTemp, Reg RegGenResult);
        PopFrame;
        Move (RegGenResult, Reg RegTemp);
        Return
-      ], Int)
+      ], t)
   in
 
   let rec aux (prg : Ast.prog) = match prg with
   | [] -> ([], [])
-  | (Dfuncdef (name, returntype, args, code), pos) :: q -> begin
+  | (Dfuncdef (name, returntype, args, code), _) :: q -> begin
     let at = List.map (fun a ->
         match a with
         | Val (_, t) -> t
@@ -502,13 +577,12 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
       );
       in_loop = false;
       loop_label_end = "";
-      loop_label_start = "";
+      loop_label_for_continue = "";
       local_var_stack_ptr = 0;
-      function_name = name;
+      check_for_return = true;
+      function_return_type = returntype;
     } in
-    let code, codereturntype = compile_stmt env code in
-    if codereturntype <> returntype
-    then raise (CompilerError ("Incompatible return type", pos));
+    let code, _ = compile_stmt env code in
     let txt, dt = aux q in
     (
       Label (func_label name)
@@ -529,7 +603,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
   )
   in
   let code, data = aux prg in
-  (
+  ((
     code,
     (
       List.concat (
@@ -538,4 +612,4 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog) =
         (List.rev (!strings))
       )
     ) @ data
-  )
+  ), !warnings)

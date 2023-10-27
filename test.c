@@ -13,6 +13,10 @@ void print_int(int x)
 		"syscall"
 	};
 
+	{
+		return ;
+	}
+
 	return;
 }
 
@@ -23,8 +27,6 @@ void print_string(int* s)
 		"li $v0, 4\n"
 		"syscall"
 	};
-
-	return;
 }
 
 int read_int()

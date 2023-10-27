@@ -22,7 +22,14 @@ let () =
     let ast = (Parser.prog Lexer.token buf) in
 		if ifile <> stdin
 			then close_in ifile;
-		let output = assemble (Compile.compile_prog ast) in
+    
+    let insts, warnings = Compile.compile_prog ast in
+    List.iter (fun ((msg, pos) : Compile.warning) ->
+      Printf.printf "[Warning at line %d; column %d] %s"
+        pos.pos_lnum (pos.pos_cnum-pos.pos_bol+1) msg;
+    ) warnings;
+
+		let output = assemble insts in
 		let ofile =
 			if Array.length Sys.argv > 3
 			then open_out Sys.argv.(3)
