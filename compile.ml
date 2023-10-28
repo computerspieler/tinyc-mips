@@ -630,6 +630,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
        Move (RegGenResult, Reg RegTemp);
        Return
       ], t)
+  | Snothing -> ([], Void)
   in
 
   let rec aux (prg : Ast.prog) = match prg with

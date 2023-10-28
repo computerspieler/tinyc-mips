@@ -142,7 +142,7 @@ stmt:
 			(Sblock [], Lexing.dummy_pos)
 		  ), $startpos }
 	
-	| SemiColon; s = stmt { s }
+	| SemiColon { Snothing, $startpos }
 
 	| KdBreak SemiColon { Sbreak, $startpos }
 	| KdContinue SemiColon { Scontinue, $startpos }

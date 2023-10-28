@@ -43,6 +43,7 @@ and stmt_node =
 	| Sbreak
 	| Scontinue
 	| SInlineAssembly of string
+  | Snothing
 
 type def =
 	| Dfuncdef of string * var_type * arg list * stmt
