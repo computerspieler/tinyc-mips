@@ -6,7 +6,7 @@ exception CompilerError of string * Lexing.position
 
 type global_decl =
 	| VarDecl of var_type
-	| FuncDecl of var_type * var_type list
+	| FuncDecl of var_type * var_type list * bool
 
 type env = {
   mutable local_vars : (var*instruction_arg) list;
@@ -15,6 +15,8 @@ type env = {
   loop_label_for_continue : string;
   loop_label_end : string;
   function_return_type : var_type;
+  function_has_varargs : bool;
+  function_arguments_type : var_type list;
   mutable check_for_return : bool;
 }
 
@@ -22,10 +24,14 @@ let rec string_of_var_type t = match t with
   | Void -> "void"
   | Int -> "int"
   | Ref t -> string_of_var_type t
-  | Ptr (Func (rt, at)) ->
-    ((string_of_var_type rt) ^ "(*)(" ^ (string_of_args_type at) ^ ")")
+  | Ptr (Func (rt, at, has_varargs)) ->
+    (
+      (string_of_var_type rt) ^ "(*)(" ^ (string_of_args_type at) ^
+      (if has_varargs then ", ..." else "") ^
+      ")"
+    )
   | Ptr t -> ((string_of_var_type t) ^ "*")
-  | Func (_, _) -> failwith "Not supposed to happen"
+  | Func _ -> failwith "Not supposed to happen"
 and string_of_args_type l = match l with
   | [] -> ""
   | t::[] -> (string_of_var_type t)
@@ -37,7 +43,7 @@ let rec sizeof t = match t with
   | Int -> 4
   | Ref t -> sizeof t
   | Void
-  | Func (_, _) -> failwith "Impossible"
+  | Func _ -> failwith "Impossible"
 
 let get_local e name =
   List.find_opt (fun ((n, _), _) -> n=name) e.local_vars
@@ -144,6 +150,17 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
 
   (* Note de conception: L'évaluation de chaque expression doit être indépendante *)
   let rec compile_expr env (e, pos) : (instruction list * var_type) = match e with
+    | Evarargs ->
+      if not env.function_has_varargs
+      then raise (CompilerError ("Tried to use a varargs where it's impossible", pos))
+      else (
+        let varargs_start =
+          List.fold_left
+            (fun acc x -> acc + (sizeof x))
+            0 env.function_arguments_type
+          in
+        ([Move (RegGenResult, ArgumentVar varargs_start)], Ptr Int)
+      )
     | Eint i -> ([Move (RegGenResult, Immediate i)], Int)
     | Estring s -> begin
       let id = List.length (!strings) in
@@ -153,9 +170,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     | Eident n -> begin
       match get_global n with
       | Some (VarDecl t) -> ([Move (RegGenResult, Label n)], Ref t)
-      | Some (FuncDecl (t, at)) -> (
+      | Some (FuncDecl (t, at, has_varargs)) -> (
         [Move (RegGenResult, Label (func_label n))],
-        Ptr (Func (t, at))
+        Ptr (Func (t, at, has_varargs))
       )
       | None -> (
         match get_local env n with
@@ -172,16 +189,20 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         in
         
       let (f, t) = compile_expr env f in
-      let return_type, func_args_type = match t with
-      | Ptr (Func (rt, fat)) -> (rt, fat)
+      let return_type, func_args_type, func_has_varargs = match t with
+      | Ptr (Func (rt, fat, has_varargs)) -> (rt, fat, has_varargs)
       | _ -> raise (CompilerError ("Invalid function", pos))
       in
 
       let rec check_args_types supposed reality =
         match supposed, reality with
         | [], [] -> ()
-        | _::_, [] -> raise (CompilerError ("Too much arguments", pos))
-        | [], _::_ -> raise (CompilerError ("Not enough arguments", pos))
+        | _::_, [] ->
+          raise (CompilerError ("Not enough arguments", pos))
+        | [], _::_ ->
+          if func_has_varargs
+          then ()
+          else raise (CompilerError ("Too much arguments", pos))
         | ts::qs, tr::qr when are_same_types ts tr -> check_args_types qs qr
         | ts::_, tr::_ ->
           raise (CompilerError (
@@ -259,8 +280,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       let return_type = match lhs_t, rhs_t with
       | _, Void
       | Void, _
-      | _, Func(_, _)
-      | Func(_, _), _ -> raise (CompilerError ("Invalid type", pos))
+      | _, Func _
+      | Func _, _ -> raise (CompilerError ("Invalid type", pos))
 
       | Int, _ when op = Assign -> raise (CompilerError ("Invalid lhs type", pos))
       | Ptr t, Ptr t' when t <> t' -> raise (CompilerError ("Invalid operation", pos))
@@ -349,7 +370,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
 
       | Assign -> (
         match lhs_t with
-        | Int | Void | Func (_, _) ->
+        | Int | Void | Func _ ->
           raise (CompilerError ("Can't assign a value", pos))
         | Ref _ | Ptr _ -> 
           [Move (RegGenResult, Reg RegGen2);
@@ -614,11 +635,12 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
   let rec aux (prg : Ast.prog) = match prg with
   | [] -> ([], [])
   | (Dfuncdef (name, returntype, args, code), _) :: q -> begin
-    let at = List.map (fun a ->
+    let at = List.filter_map (fun a ->
         match a with
-        | Val (_, t) -> t
+        | Val (_, t) -> Some t
+        | Varargs -> None
       ) args in
-    Hashtbl.add globals name (FuncDecl (returntype, at));
+    Hashtbl.add globals name (FuncDecl (returntype, at, List.mem Varargs args));
     let env = {
       local_vars = (
         let v, _ =
@@ -627,6 +649,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
               ((n, t), ArgumentVar stack)::out,
               (sizeof t) + stack
             )
+            | Varargs -> (out, stack)
           ) ([], 0) args
           in v
       );
@@ -636,6 +659,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       local_var_stack_ptr = 0;
       check_for_return = true;
       function_return_type = returntype;
+      function_arguments_type = at;
+      function_has_varargs = List.mem Varargs args;
     } in
     let code, _ = compile_stmt env code in
     let txt, dt = aux q in

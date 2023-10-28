@@ -18,16 +18,18 @@ and expr_node =
 	| Eint of int
 	| Estring of string
   | Econd of expr * expr * expr
+  | Evarargs
 
 type var_type =
 	| Void | Int | Ptr of var_type
   | Ref of var_type
-  | Func of var_type * var_type list
+  | Func of var_type * var_type list * bool
 
 type var = string * var_type
 
 type arg = 
 	| Val of var
+  | Varargs
 
 type stmt = stmt_node*Lexing.position
 and stmt_node =

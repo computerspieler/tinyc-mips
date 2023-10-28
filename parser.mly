@@ -7,17 +7,18 @@
 %token <string> String 
 %token <string> Ident
 (*
-%token ThreeDots Lbracket Rbracket
+%token Lbracket Rbracket
 *)
 
 %token KdIf KdElse KdDo KdWhile KdInlineAsmMips
 %token KdInt KdVoid
 %token KdReturn KdBreak KdContinue
+%token KdVarargsStart
 
 %token ShiftLeft ShiftRight
 %token SemiColon Comma QuestionMark Colon
 %token Plus Minus Star Div Percent Tilde
-%token Lparam Rparam Lbrace Rbrace
+%token Lparam Rparam Lbrace Rbrace ThreeDots
 
 %token DoubleEqual NotEqual Greater Less GreaterOrEqual LessOrEqual
 %token DoubleAmpersand DoublePipe
@@ -61,6 +62,7 @@ expr_args:
 ;
 
 expr:
+	| KdVarargsStart			{ Evarargs, $startpos }
 	| i=Int						{ Eint i, $startpos }
 	| s=expr_str				{ Estring s, $startpos }
 	| i=Ident					{ Eident i, $startpos }
@@ -154,6 +156,7 @@ stmt_block:
 
 args_def:
 	| t=var_type n=Ident Comma r = args_def { (Val (n, t)) :: r }
+	| ThreeDots { [Varargs] }
 	| t=var_type n=Ident { [Val (n, t)] }
 ;
 

@@ -1,1 +1,13 @@
-Pour le moment, le compilateur ne supporte que la déclaration de variable en ANSI.
+# Compilateur
+
+## Varargs
+Je gère les varargs de manière différentes que les standards C.
+Je génère un identifiant spécial `__varargs_start` qui contient
+l'addresse de la première valeur après les arguments obligatoires.
+
+## Bugs connu
+Le code suivant n'est pas censé être compilable, mais l'est ici :
+`
+if(1)
+	int x;
+`
