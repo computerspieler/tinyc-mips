@@ -17,6 +17,7 @@ and expr_node =
 	| Ecall of expr * expr list
 	| Eint of int
 	| Estring of string
+  | Econd of expr * expr * expr
 
 type var_type =
 	| Void | Int | Ptr of var_type

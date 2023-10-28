@@ -74,7 +74,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
   let strings = ref [] in
   let warnings = ref [] in
 
-
   let add_warning msg pos =
     warnings := (msg, pos) :: !warnings;
   in
@@ -128,6 +127,13 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       LoadWord (reg, (reg, 0))::(retrieve_value_from_variable_insts t reg)
     | _ -> []
     in
+  
+  let rec is_a_valid_condition_type t =
+    match t with
+    | Ref t -> is_a_valid_condition_type t
+    | Int | Ptr _ -> true
+    | Void | Func _ -> false
+  in
 
   let rec are_same_types ts tr =
     match ts, tr with
@@ -372,6 +378,29 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         , return_type
       )
     end
+    | Econd (cond, et, ef) -> begin
+      let lt, lf, ln = new_label (), new_label (), new_label ()in
+
+      let (insts_cond,  type_cond ) = compile_expr env cond in
+      let (insts_true,  type_true ) = compile_expr env et in
+      let (insts_false, type_false) = compile_expr env ef in
+
+      if not (are_same_types type_true type_false)
+      then raise (CompilerError ("The two values are not the same type", pos));
+      
+      if not (is_a_valid_condition_type type_cond)
+      then raise (CompilerError ("Invalid condition type", pos));
+
+      (
+        insts_cond @ 
+        (retrieve_value_from_variable_insts type_cond RegGenResult) @
+        (bool_of_int RegGenResult) @
+        [ConditionalBranch (RegGenResult, lt, lf); Label lt] @
+        insts_true  @ [Branch (Label ln); Label lf] @
+        insts_false @ [Label ln]
+        , type_true
+      )
+    end
   in
     
   let rec compile_stmt env (s, pos) : (instruction list * var_type) = match s with
@@ -425,6 +454,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let sfi, _ = compile_stmt env stmt_false in
     
     let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
+
+    if not (is_a_valid_condition_type ct)
+    then raise (CompilerError ("Invalid condition type", pos));
     
     (* TODO: Types *)
     (
@@ -440,6 +472,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let lt = new_label () in
     let lf = new_label () in
     let ce, ct = compile_expr env cond in
+
+    if not (is_a_valid_condition_type ct)
+    then raise (CompilerError ("Invalid condition type", pos));
     
     let env' = 
       {env with
@@ -466,6 +501,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let ls = new_label () in
     let ln = new_label () in
     let ce, ct = compile_expr env cond in
+
+    if not (is_a_valid_condition_type ct)
+    then raise (CompilerError ("Invalid condition type", pos));
     
     let env' = 
       {env with
@@ -610,13 +648,17 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     )
   end
 
-  | (Dvardef (_, Void), pos)::_ -> 
-    raise (CompilerError ("Invalid type for variable", pos))
-  | (Dvardef (name, vartype), _)::q -> (
+  | (Dvardef (name, vartype), pos)::q -> (
     Hashtbl.add globals name (VarDecl vartype);
     let txt, dt = aux q in
-    (* TODO: Changer ça quand on aura d'autre types *)
-    (txt, DLabel name::DWord 0::dt)
+    
+    match vartype with
+    | Int | Ptr _ ->
+      (txt, DLabel name::DWord 0::dt)
+    | Func _ | Ref _ ->
+      failwith "Impossible"
+    | Void  ->
+      raise (CompilerError ("Invalid type for variable", pos))
   )
   in
   let code, data = aux prg in

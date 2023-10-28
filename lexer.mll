@@ -65,6 +65,8 @@ rule token = parse
 	| '='								{ AssignEqual }
 	| ';'								{ SemiColon }
 	| ','								{ Comma }
+	| '?'								{ QuestionMark }
+	| ':'								{ Colon }
 	
 	| integer exp_10? as value			{ Int (int_of_string value) }
 	| ident as value					{ id_or_kwd value }

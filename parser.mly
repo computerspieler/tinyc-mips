@@ -15,7 +15,7 @@
 %token KdReturn KdBreak KdContinue
 
 %token ShiftLeft ShiftRight
-%token SemiColon Comma
+%token SemiColon Comma QuestionMark Colon
 %token Plus Minus Star Div Percent Tilde
 %token Lparam Rparam Lbrace Rbrace
 
@@ -26,6 +26,7 @@
 %token AssignEqual
 
 %right AssignEqual
+%nonassoc QuestionMark Colon
 %left DoublePipe
 %left DoubleAmpersand
 %left DoubleEqual NotEqual
@@ -74,6 +75,8 @@ expr:
 				| None -> Ecall(f, [])
 			), $startpos
 		}
+	| cond=expr QuestionMark et=expr Colon ef=expr
+		{ Econd(cond, et, ef), $startpos }
 
 %inline binop:
 	| Star					{ Ast.Mul }
