@@ -40,6 +40,34 @@ int read_int()
 	return x;
 }
 
+void main3(int x) {
+	print_string("\nEst ce que x est plus grand que 10 ? ");
+	print_string(x > 10 ? "Oui\n" : "Non\n");
+}
+
+void func4(int x, ...)
+{
+	int *start = __varargs_start;
+	
+	print_int(*start); start = start + 1;
+	print_int(*start); start = start + 1;
+	print_int(*start); start = start + 1;
+	print_int(*start);
+}
+
+int fib(int n) {
+	if(n<=1) {
+		return n;
+	}
+    return ((fib(n-1)) + (fib(n-2)));
+}
+int syr(int n) {
+	print_int(n);
+	if(n==1) return 0;
+	if(n%2) return syr(3*n+1);
+	return syr(n/2);
+}
+
 void main() {
 	int x;
 
@@ -48,7 +76,17 @@ void main() {
 	print_string("Value of x*x: ");
 	print_int(square(x));
 
-	return;
+	int i = -10;
+	x-100;
+	while(i = i + 1)
+	;
+
+	main3(x);
+	func4(x, 1, 2, 3, 4);
+
+	int v ;
+	v = fib(10);
+	print_int (syr(v));
 }
 
 int main2() {

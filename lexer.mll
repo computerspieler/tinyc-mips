@@ -21,11 +21,9 @@ let whitespace = [' ' '\t' '\r' '\n']
 let letter = ['a'-'z' 'A'-'Z' '_']
 let digit = ['0'-'9']
 let alphanum = letter|digit
-let ident = letter (alphanum)*
 
 let exp_10 = 'e' digit+
-let integer = '-'? digit+
-let frac = '.' integer
+let integer = digit+
 
 rule token = parse
 	| '\n'								{ newline lexbuf; token lexbuf }
@@ -71,7 +69,7 @@ rule token = parse
 	| ':'								{ Colon }
 	
 	| integer exp_10? as value			{ Int (int_of_string value) }
-	| ident as value					{ id_or_kwd value }
+	| letter (alphanum)* as value		{ id_or_kwd value }
 	| eof								{ EOF }
 	| '"'([^ '\\' '"']|'\\' _)*'"' as s
 		{

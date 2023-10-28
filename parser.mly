@@ -33,10 +33,10 @@
 %left DoubleEqual NotEqual
 %left Greater GreaterOrEqual Less LessOrEqual
 %left ShiftLeft ShiftRight
-%left Plus
+%left Plus Minus
 %left Percent Div
 
-%left Pipe Ampersand Minus Star
+%left Pipe Ampersand Star
 %nonassoc Uunop
 %nonassoc Lparam
 
@@ -146,8 +146,7 @@ stmt:
 
 	| KdBreak SemiColon { Sbreak, $startpos }
 	| KdContinue SemiColon { Scontinue, $startpos }
-	| KdReturn e=expr SemiColon { Sreturn (Some e), $startpos }
-	| KdReturn SemiColon { Sreturn None, $startpos }
+	| KdReturn e=expr? SemiColon { Sreturn e, $startpos }
 
 	| KdInlineAsmMips Lbrace s=expr_str Rbrace SemiColon { SInlineAssembly s, $startpos }
 	| KdInlineAsmMips Lbrace Rbrace SemiColon { SInlineAssembly "", $startpos }
