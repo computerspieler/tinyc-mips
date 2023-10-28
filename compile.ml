@@ -268,7 +268,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
           in aux rt
         )
         | Neg ->
-          ((retrieve_value_from_variable_insts rt RegGenResult) @
+          (i @ (retrieve_value_from_variable_insts rt RegGenResult) @
             [Mul (RegGenResult, RegGenResult, Immediate (-1))], Int)
       )
     end

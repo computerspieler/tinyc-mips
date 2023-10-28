@@ -6,6 +6,15 @@ int square(int x)
 	return x*x;
 }
 
+void print_string(int* s)
+{
+	__mips {
+		"lw $a0, 0($a0)\n"
+		"li $v0, 4\n"
+		"syscall"
+	};
+}
+
 void print_int(int x)
 {
 	__mips {
@@ -14,16 +23,8 @@ void print_int(int x)
 		"syscall"
 	};
 
+	print_string("\n");
 	return;
-}
-
-void print_string(int* s)
-{
-	__mips {
-		"lw $a0, 0($a0)\n"
-		"li $v0, 4\n"
-		"syscall"
-	};
 }
 
 int read_int()
@@ -56,16 +57,22 @@ void func4(int x, ...)
 }
 
 int fib(int n) {
-	if(n<=1) {
+	if(n<=1)
 		return n;
-	}
-    return ((fib(n-1)) + (fib(n-2)));
+    return fib(n-1) + fib(n-2);
 }
 int syr(int n) {
 	print_int(n);
 	if(n==1) return 0;
 	if(n%2) return syr(3*n+1);
 	return syr(n/2);
+}
+
+void func5()
+{
+	int i = -10;
+	while(i = i + 1)
+	;
 }
 
 void main() {
@@ -76,17 +83,17 @@ void main() {
 	print_string("Value of x*x: ");
 	print_int(square(x));
 
-	int i = -10;
-	x-100;
-	while(i = i + 1)
-	;
+	func5();
 
 	main3(x);
 	func4(x, 1, 2, 3, 4);
 
 	int v ;
 	v = fib(10);
+	print_int(v);
 	print_int (syr(v));
+
+	return;
 }
 
 int main2() {
