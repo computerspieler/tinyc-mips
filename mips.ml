@@ -149,10 +149,9 @@ let rec instruction_to_mips (i : instruction) : string =
 		(itm (Branch (Reg RegTemp)))
 	)
 
-  | ConditionalBranch(rc, at, af) -> (
-    "bne " ^ (rtm rc) ^ ",$zero,1\n" ^
-    (itm (Branch af)) ^
-    (itm (Branch at))
+  | ConditionalBranch(rc, lt, lf) -> (
+    "bne " ^ (rtm rc) ^ ",$zero," ^ lt ^ "\n" ^
+    (itm (Branch (Label lf)))
   )
 
   | PushWord (Reg r) -> (
@@ -188,7 +187,8 @@ let mips_text_header =
   "li $v0, 10\n" ^
   "syscall\n"
 
-let mips_data_header = ".data\n"
+let mips_data_header =
+  ".data\n"
 
 let produce_sections ((insts, data) : prog) =
 	let text = 

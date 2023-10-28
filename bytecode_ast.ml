@@ -42,7 +42,7 @@ type instruction =
   | IsNegative of reg*reg
   (* Vérifie si le second registre est dans N* *)
   | IsPositive of reg*reg
-	| ConditionalBranch of reg*instruction_arg*instruction_arg
+	| ConditionalBranch of reg*string*string
 	| Branch of instruction_arg
 	| InlineAssembly of string
 	

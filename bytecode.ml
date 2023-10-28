@@ -50,8 +50,8 @@ let instruction_to_str (i : instruction) : string =
   | IsNegative (rd, rs) -> (rts rd) ^ " <- " ^ (rts rs) ^ " < 0 ? 1 : 0"
   | IsPositive (rd, rs) -> (rts rd) ^ " <- " ^ (rts rs) ^ " > 0 ? 1 : 0"
 
-  | ConditionalBranch (r, i_t, i_f) ->
-    "if " ^ (rts r) ^ " then goto " ^ (iats i_t) ^ " else goto " ^ (iats i_f)
+  | ConditionalBranch (r, l_t, l_f) ->
+    "if " ^ (rts r) ^ " then goto " ^ l_t ^ " else goto " ^ l_f
   | Branch i ->
     "goto " ^ (iats i)
 

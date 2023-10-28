@@ -115,7 +115,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let lbl_if_zero = new_label () in
     [
       ConditionalBranch
-        (reg, Label lbl_if_non_zero, Label lbl_if_zero);
+        (reg, lbl_if_non_zero, lbl_if_zero);
       Label lbl_if_non_zero;
       Move (reg, Immediate 1);
       Label lbl_if_zero
@@ -429,7 +429,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     (* TODO: Types *)
     (
       ce @
-      [ConditionalBranch (RegGenResult, Label lt, Label lf); Label lt] @ sti
+      [ConditionalBranch (RegGenResult, lt, lf); Label lt] @ sti
       @ [Branch (Label ln); Label lf] @ sfi @ [Label ln]
       , Void
     )
@@ -456,7 +456,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     
     (
       Label ls :: ce @
-      [ConditionalBranch (RegGenResult, Label lt, Label lf); Label lt] @
+      [ConditionalBranch (RegGenResult, lt, lf); Label lt] @
       sbi @ [Branch (Label ls); Label lf]
       , Void
     )
@@ -482,7 +482,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     (* TODO: Types *)
     (
       Label ls :: sbi @ ce @
-      [ConditionalBranch (RegGenResult, Label ls, Label ln); Label ln]
+      [ConditionalBranch (RegGenResult, ls, ln); Label ln]
       , Void
     )
   end
