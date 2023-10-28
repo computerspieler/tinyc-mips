@@ -130,9 +130,17 @@ stmt:
 	(* Solution au problème du "dangling else"
 		reprise de ce blog: https://www.epaperpress.com/lexandyacc/if.html *)
 	| KdIf cond=condition if_code=stmt KdElse else_code=stmt
-		{ Sif(cond, if_code, else_code), $startpos }
+		{ Sif(
+			cond,
+			(Sblock [if_code], Lexing.dummy_pos),
+			(Sblock [else_code], Lexing.dummy_pos)
+		  ), $startpos }
 	| KdIf cond=condition code=stmt %prec IfX
-		{ Sif(cond, code, (Sblock [], Lexing.dummy_pos)), $startpos }
+		{ Sif(
+			cond,
+			(Sblock [code], Lexing.dummy_pos),
+			(Sblock [], Lexing.dummy_pos)
+		  ), $startpos }
 	
 	| SemiColon; s = stmt { s }
 
