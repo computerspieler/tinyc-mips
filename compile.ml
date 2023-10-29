@@ -13,8 +13,9 @@ type global_decl =
 	| FuncDecl of var_type * var_type list * bool * bool
 
 type env = {
-  mutable local_vars : (var*instruction_arg) list;
+  mutable local_vars : (var*instruction_arg*int) list;
   mutable local_var_stack_ptr : int;
+  scope : int;
   in_loop : bool;
   loop_label_for_continue : string;
   loop_label_end : string;
@@ -54,14 +55,16 @@ let rec sizeof t = match t with
   | Func _ -> failwith "Impossible"
 
 let get_local env name =
-  List.find_opt (fun ((n, _), _) -> n=name) env.local_vars
+  List.find_opt (fun ((n, _), _, _) -> n=name) env.local_vars
 
 let add_local_vars env t pos name =
-  if get_local env name <> None
-  then raise (CompilerError ("Redefination of variable " ^ name, pos))
-  else (
+  match get_local env name with
+  | Some (_, _, s) when s = env.scope ->
+    raise (CompilerError ("Redefination of variable " ^ name, pos))
+  | None
+  | Some _ -> (
     env.local_var_stack_ptr <- env.local_var_stack_ptr + sizeof t;
-    env.local_vars <- ((name, t), LocalVar (-env.local_var_stack_ptr))::env.local_vars;
+    env.local_vars <- ((name, t), LocalVar (-env.local_var_stack_ptr), env.scope)::env.local_vars;
   )
 
 let rec get_dereferenced_type t =
@@ -211,7 +214,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     | EsizeofType t -> ([Move (RegGenResult, Immediate (sizeof t))], Int)
     | EsizeofVar n -> begin
       match get_local env n with
-      | Some ((_, t), _) ->
+      | Some ((_, t), _, _) ->
         ([Move (RegGenResult, Immediate (sizeof t))], Int)
       | None -> (
         match get_global n with
@@ -235,7 +238,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     end
     | Eident n -> begin
       match get_local env n with
-      | Some ((_, t), var) ->
+      | Some ((_, t), var, _) ->
         ([Move (RegGenResult, var)], Ref t)
       | None -> (
         match get_global n with
@@ -728,10 +731,12 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
 
     (* On limite la recherche de return au premier bloc étudié
        i.e, le bloc principale d'une fonction *)
-    if env.check_for_return
-    then env.check_for_return <- false;
+    let env' = {env with check_for_return = false; scope = env.scope+1} in
 
-    let insts_with_type = List.map (compile_stmt env) block in
+    let insts_with_type = List.map (compile_stmt env') block in
+
+    env.local_var_stack_ptr <- env'.local_var_stack_ptr;
+
     if insts_with_type = []
     then ([], Void)
     else 
@@ -778,6 +783,44 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
        Return]
       , t
     )
+  | Sfor (econd, eiter, block) -> begin
+    let label_iter_and_cond = new_label () in
+    let label_cond = new_label () in
+    let label_code = new_label () in
+    let label_next = new_label () in
+
+    let cond_insts, cond_type = compile_expr env econd in
+    let iter_insts = List.map
+      (fun e -> let i, _ = compile_expr env e in i)
+      eiter in
+    let iter_insts = List.flatten iter_insts in
+    
+    let env' = 
+      {env with
+        in_loop = true;
+        loop_label_for_continue = label_iter_and_cond;
+        loop_label_end = label_next;
+        check_for_return = false}
+      in
+    let stmt_insts, stmt_type = compile_stmt env' block in
+    env.local_var_stack_ptr <- env'.local_var_stack_ptr;
+
+    if not (is_a_valid_condition_type cond_type)
+    then raise (CompilerError ("Invalid condition type", pos));
+    
+    let cond_insts = cond_insts @
+      (retrieve_value_from_variable_insts cond_type RegGenResult) @
+      (bool_of_int RegGenResult) in
+    
+    (
+      [Branch (Label label_cond)] @
+      (Label label_iter_and_cond::iter_insts) @
+      (Label label_cond::cond_insts) @
+      [ConditionalBranch (RegGenResult, label_code, label_next); Label label_code] @
+      stmt_insts @ [Branch (Label label_iter_and_cond); Label label_next]
+      , stmt_type
+    )
+  end
   | Snothing -> ([], Void)
   in
 
@@ -809,13 +852,14 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
           List.fold_left (fun (out, stack) a ->
             match a with
             | Val (n, t) -> (
-              ((n, t), ArgumentVar stack)::out,
+              ((n, t), ArgumentVar stack, 0)::out,
               (sizeof t) + stack
             )
             | Varargs -> (out, stack)
           ) ([], 0) args
           in v
       );
+      scope=0;
       in_loop = false;
       loop_label_end = "";
       loop_label_for_continue = "";

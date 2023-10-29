@@ -7,7 +7,7 @@
 %token <string> String 
 %token <string> Ident
 
-%token KdIf KdElse KdDo KdWhile KdInlineAsm
+%token KdIf KdElse KdDo KdWhile KdInlineAsm KdFor
 %token KdInt KdVoid
 %token KdReturn KdBreak KdContinue
 %token KdVarargsStart KdSizeof
@@ -130,6 +130,30 @@ vars_def:
 		{ v::next }
 ;
 
+for_iter_expr:
+	| e = expr Rparam						{ [e] }
+	| e = expr Comma n = for_iter_expr		{ e::n }
+	| Rparam								{ [] }
+
+for_init_expr:
+	| { [] }
+	| e = expr		{ [Ssimple e, $startpos] }
+	| gt=var_type d=vars_def {
+		let defs = List.map
+			(fun (name, init_expr, t, pos) ->
+				(* On remplace le type void par un type plus
+				   approprié *)
+				let rec aux t =
+					match t with
+					| Ptr t -> Ptr (aux t)
+					| Void -> gt
+					| _ -> failwith "Impossible"
+					in 
+				(name, init_expr, aux t, pos)
+			) d in
+		[SVarDecl(defs), $startpos]
+	}
+
 stmt:
 	| gt=var_type d=vars_def SemiColon {
 		let defs = List.map
@@ -180,6 +204,16 @@ stmt:
 			match s with
 			| Some s -> (SInlineAssembly s, $startpos)
 			| None -> (SInlineAssembly "", $startpos)
+		}
+
+	| KdFor Lparam init = for_init_expr SemiColon cond = expr? SemiColon iter = for_iter_expr code = stmt
+		{
+			let main_for =
+				match cond with
+				| Some c -> (Sfor(c, iter, code), $startpos)
+				| None -> (Sfor((Eint 1, $startpos), iter, code), $startpos)
+			in
+			(Sblock (init @ [main_for]), $startpos)
 		}
 
 %inline condition:

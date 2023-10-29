@@ -50,6 +50,7 @@ and stmt_node =
 	| Scontinue
 	| SInlineAssembly of string
   | Snothing
+  | Sfor of expr * expr list * stmt
 
 type def =
   | Dfuncdecl of string * var_type * arg list

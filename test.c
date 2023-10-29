@@ -141,6 +141,13 @@ int main() {
 	print_int (sizeof(y));
 	print_int(10*y[4]);
 
+	for(int a = 0; a < 10; a = a+1)
+		print_int(a);
+
+	{
+		int z;
+		z = 8;
+	}
 
 	x = y;
 	print_int(x);
