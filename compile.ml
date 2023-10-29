@@ -20,6 +20,9 @@ type env = {
   mutable check_for_return : bool;
 }
 
+(* Converti les types en chaines de caractères.
+   C'est utilisé pour les avertissements et les erreurs
+   lié aux types. *)
 let rec string_of_var_type t = match t with
   | Void -> "void"
   | Int -> "int"
@@ -37,6 +40,7 @@ and string_of_args_type l = match l with
   | t::[] -> (string_of_var_type t)
   | t::q -> ((string_of_var_type t) ^ ", " ^ (string_of_args_type q))
 
+(* Renvoie la taille en mémoire de chaque type*)
 let rec sizeof t = match t with
   (* TODO: Faire un truc plus indépendant de l'architecture *)
   | Ptr _ -> 4
@@ -45,16 +49,27 @@ let rec sizeof t = match t with
   | Void
   | Func _ -> failwith "Impossible"
 
-let get_local e name =
-  List.find_opt (fun ((n, _), _) -> n=name) e.local_vars
+let get_local env name =
+  List.find_opt (fun ((n, _), _) -> n=name) env.local_vars
 
-let add_local_vars e t pos name =
-  if get_local e name <> None
+let add_local_vars env t pos name =
+  if get_local env name <> None
   then raise (CompilerError ("Redefination of variable " ^ name, pos))
   else (
-    e.local_vars <- ((name, t), LocalVar e.local_var_stack_ptr)::e.local_vars;
-    e.local_var_stack_ptr <- e.local_var_stack_ptr + sizeof t
+    env.local_vars <- ((name, t), LocalVar env.local_var_stack_ptr)::env.local_vars;
+    env.local_var_stack_ptr <- env.local_var_stack_ptr + sizeof t
   )
+
+let rec get_dereferenced_type t =
+  match t with
+  | Ref t -> get_dereferenced_type t
+  | _ -> t
+
+(* Cette fonction est nécéssaire pour se débarasser des ref superflus *)
+let are_same_types t1 t2 =
+  let t1 = get_dereferenced_type t1 in
+  let t2 = get_dereferenced_type t2 in
+  t1 = t2
 
 let is_pointer x =
   match x with
@@ -141,18 +156,11 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     | Void | Func _ -> false
   in
 
-  let rec are_same_types ts tr =
-    match ts, tr with
-    | _, Ref tr ->  are_same_types ts tr
-    | Ref ts, _ ->  are_same_types ts tr
-    | _, _ -> ts=tr
-  in
-
   (* Note de conception: L'évaluation de chaque expression doit être indépendante *)
   let rec compile_expr env (e, pos) : (instruction list * var_type) = match e with
     | Evarargs ->
       if not env.function_has_varargs
-      then raise (CompilerError ("Tried to use a varargs where it's impossible", pos))
+      then raise (CompilerError ("Tried to use varargs where it's impossible", pos))
       else (
         let varargs_start =
           List.fold_left
@@ -217,10 +225,19 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       (
         [PushWord (Reg RegArgumentsStart)]
         @ (
+          (* Ici, nous générons les instructions liés à chaque instructions
+             et nous les envoyons sur la pile. Nous les traitons de
+             DROITE À GAUCHE (d'ou le List.rev) pour qu'à la fin, le
+             premier argument soit à l'offset 0, le deuxième à un offset
+             i > 0, ... Ce qui permet d'avoir les arguments conditionnels
+             à la fin, et d'avoir les arguments obligatoires à des 
+             offsets fixes et connus *)
           List.fold_left (fun insts (ai, at) ->
-            insts @ ai @ (retrieve_value_from_variable_insts at RegGenResult) @ [PushWord (Reg RegGenResult)]
+            insts @ ai @
+            (retrieve_value_from_variable_insts at RegGenResult) @
+            [PushWord (Reg RegGenResult)]
           ) [] (List.rev args)
-          (* C'est nécéssaire, TODO: Commenter *)
+          (* On calcule l'adresse de la fonction *)
         ) @ f @ [
           Move (RegArgumentsStart, Reg RegStackPtr);
           CallFunction (Reg RegGenResult);
@@ -237,8 +254,10 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         match u with
         | BoolNot ->
           (
-            i @ (bool_of_int RegGenResult) @
-            (* Ici j'utilise le fait que RegGenResult vaut soit 0, soit 1,
+            i @ 
+            (retrieve_value_from_variable_insts rt RegGenResult) @
+            (bool_of_int RegGenResult) @
+            (* Ici on utilise le fait que RegGenResult vaut soit 0, soit 1,
                 et que le passer par une porte Xor permet donc d'inverser la
                 valeur du bit 0 *)
             [Xor (RegGenResult, RegGenResult, Immediate 1)]
@@ -258,15 +277,16 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
               | _ -> raise (CompilerError ("Too much dereferences", pos))
             in aux rt
           )
-        | Reference -> (
-          i,
-          let rec aux t =
-            match t with
-            | Ref (Ref t) -> Ref (aux (Ref t))
-            | Ref t -> Ptr t
-            | _ -> raise (CompilerError ("Too much references", pos))
-          in aux rt
-        )
+        | Reference ->
+          (
+            i,
+            let rec aux t =
+              match t with
+              | Ref (Ref t) -> Ref (aux (Ref t))
+              | Ref t -> Ptr t
+              | _ -> raise (CompilerError ("Too much references", pos))
+            in aux rt
+          )
         | Neg ->
           (i @ (retrieve_value_from_variable_insts rt RegGenResult) @
             [Mul (RegGenResult, RegGenResult, Immediate (-1))], Int)
@@ -278,22 +298,36 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       let rhs_insts, rhs_t = compile_expr env rhs in
 
       let return_type = match lhs_t, rhs_t with
-      | _, Void
       | Void, _
-      | _, Func _
-      | Func _, _ -> raise (CompilerError ("Invalid type", pos))
+      | Func _, _ -> raise (CompilerError ("Invalid lhs type", pos))
+      | _, Void
+      | _, Func _ -> raise (CompilerError ("Invalid rhs type", pos))
 
-      | Int, _ when op = Assign -> raise (CompilerError ("Invalid lhs type", pos))
-      | Ptr t, Ptr t' when t <> t' -> raise (CompilerError ("Invalid operation", pos))
+      | Ref t, _ when op = Assign -> (
+        if not (are_same_types lhs_t rhs_t)
+        then (
+          add_warning 
+            ("Implicit cast from " ^ (string_of_var_type rhs_t) ^ " to " ^ (string_of_var_type lhs_t))
+            pos
+        );
+        t
+      )
+      | _, _ when op = Assign -> raise (CompilerError ("Invalid lhs type", pos))
 
-      | Ref t, _ when op = Assign -> t
+      | Ptr t, Ptr t' -> (
+        if not (are_same_types t t')
+        then (
+          add_warning 
+            ("Implicit cast from " ^ (string_of_var_type rhs_t) ^ " to " ^ (string_of_var_type lhs_t))
+            pos
+        );
+        Ptr t
+      )
       
-      (* TODO: En faire un avertissement *)
-      | Ref t, Ref t' when t <> t' -> raise (CompilerError ("Invalid operation", pos))
-      
-      | Ref t, Ref _ -> t
+      | Ref t, _ -> get_dereferenced_type t
       | Ptr t, _ -> Ptr t
       | _, Ptr t -> Ptr t
+
       | _, Int -> Int
       | Int, _ -> Int
       in
@@ -302,7 +336,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       | Add -> (
         (
           match is_pointer lhs_t, is_pointer rhs_t with
-          | true, true -> []
+          | true, true | false, false -> []
           | true, false ->
             [Mul (
               RegGen2, RegGen2,
@@ -313,7 +347,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
               RegGen1, RegGen1,
               Immediate (sizeof (get_pointer_type rhs_t))
             )]
-          | false, false -> []
         )
         @ [Add (RegGenResult, RegGen1, Reg RegGen2)]
       )
@@ -344,7 +377,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       | BoolEq -> (
         [Sub (RegGenResult, RegGen1, Reg RegGen2)] @
         (bool_of_int RegGenResult) @
-        (* Ici j'utilise le fait que RegGenResult vaut soit 0, soit 1,
+        (* Ici on utilise le fait que RegGenResult vaut soit 0, soit 1,
            et que le passer par une porte Xor permet donc d'inverser la
            valeur du bit 0 *)
         [Xor (RegGenResult, RegGenResult, Immediate 1)]
@@ -459,10 +492,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     | _ -> failwith "Unsupported"
   end
 
-  (* On pourrait croire que je prends trop de précautions, mais comme 
-     des registres vitaux peuvent être amenés à être touché
-     (RegFramePtr RegArgumentsStart) notamment, il est nécéssaire
-     de les sauvegarder *)
   | SInlineAssembly s -> ([InlineAssembly (parse_sequences s pos)], Void)
 
   | Sif (cond, stmt_true, stmt_false) -> begin
@@ -479,7 +508,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     if not (is_a_valid_condition_type ct)
     then raise (CompilerError ("Invalid condition type", pos));
     
-    (* TODO: Types *)
     (
       ce @
       [ConditionalBranch (RegGenResult, lt, lf); Label lt] @ sti
@@ -533,16 +561,15 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         loop_label_end = ln;
         check_for_return = false}
       in
-    let sbi, _ = compile_stmt env' block in
+    let sbi, sbt = compile_stmt env' block in
     env.local_var_stack_ptr <- env'.local_var_stack_ptr;
     
     let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
     
-    (* TODO: Types *)
     (
       Label ls :: sbi @ ce @
       [ConditionalBranch (RegGenResult, ls, ln); Label ln]
-      , Void
+      , sbt
     )
   end
 
@@ -613,13 +640,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let i, t = compile_expr env e in
     let i = i @ (retrieve_value_from_variable_insts t RegGenResult) in
 
-    (* Ça va retirer tout les ref superflus *)
-    let rec aux t =
-      match t with
-      | Ref t -> aux t
-      | _ -> t
-    in
-    let t = aux t in
+    let t = get_dereferenced_type t in
 
     if t <> env.function_return_type
     then raise (CompilerError ("Incompatible return type", pos));
@@ -697,4 +718,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         (List.rev (!strings))
       )
     ) @ data
-  ), !warnings)
+  (* Comme warnings agit comme une pile, il faut le renverser
+     pour avoir les avertissement dans le bon sens *)
+  ), List.rev !warnings)

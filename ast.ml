@@ -22,6 +22,9 @@ and expr_node =
 
 type var_type =
 	| Void | Int | Ptr of var_type
+  (* Le type ref est exclusivement utilisé par le compilateur
+     en interne pour gérer les (dé)référencements.
+  *)
   | Ref of var_type
   | Func of var_type * var_type list * bool
 

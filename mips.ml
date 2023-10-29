@@ -180,26 +180,27 @@ let rec instruction_to_mips (i : instruction) : string =
     "xori " ^ (rtm rd) ^ "," ^ (rtm rd) ^ ",1"
   )
   
-let mips_text_header =
+let text_header =
   ".text\n" ^
   "main:\n" ^
   "jal __func_main\n" ^
   "li $v0, 10\n" ^
   "syscall\n"
 
-let mips_data_header =
+let data_header =
   ".data\n"
 
 let produce_sections ((insts, data) : prog) =
 	let text = 
 		List.fold_left (fun acc inst -> acc ^ inst ^ "\n")
-			mips_text_header (List.map instruction_to_mips insts)
+			text_header (List.map instruction_to_mips insts)
 		in
 	let data =
 		List.fold_left (fun acc x -> match x with
 			| DLabel s -> (acc ^ s ^ ":\n")
 			| DString s -> (acc ^ ".asciiz \"" ^ s ^ "\"\n")
 			| DWord i -> (acc ^ ".word " ^ (string_of_int i) ^ "\n")
-		) mips_data_header data
-	in (text ^ data)
+		) data_header data
+	in
+  (text ^ data)
 

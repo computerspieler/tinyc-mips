@@ -50,10 +50,11 @@ void func4(int x, ...)
 {
 	int *start = __varargs_start;
 	
-	print_int(*start); start = start + 1;
-	print_int(*start); start = start + 1;
-	print_int(*start); start = start + 1;
-	print_int(*start);
+	// Affiche les 4 valeurs dans le varargs
+    print_int(*start); start = start + 1;
+    print_int(*start); start = start + 1;
+    print_int(*start); start = start + 1;
+    print_int(*start);
 }
 
 int fib(int n) {
@@ -75,8 +76,28 @@ void func5()
 	;
 }
 
+int* sbrk(int n)
+{
+	int *output;
+
+	__mips {
+		"or $s0, $zero, $fp\n"
+		// On met la valeur de n dans le registre a0
+		"lw $a0, 0($a0)\n"
+		
+		"li $v0, 9\n"
+		"syscall\n"
+		"sw $v0, 0($s0)\n"
+	};
+
+	return output;
+}
+
 void main() {
 	int x;
+	int *y = 0;
+
+	x = *y;
 
 	print_string("x?\n");
 	x = read_int();
@@ -84,6 +105,8 @@ void main() {
 	print_int(square(x));
 
 	func5();
+
+	sbrk(10);
 
 	main3(x);
 	func4(x, 1, 2, 3, 4);
