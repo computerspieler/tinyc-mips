@@ -847,12 +847,19 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
 
   let code, data = aux prg in
 
-  (* Vérifie si des fonctions sont restés non déclarés. *)
+  (* Vérifie si des fonctions sont restés non déclarés, et si main
+     renvoie un int *)
   Hashtbl.iter (fun name value ->
     match value with
     | VarDecl _ -> ()
-    (* *)
-    | FuncDecl (_, _, _, true) -> ()
+    | FuncDecl (rt, _, _, true) ->
+      if name <> "main" then ()
+      else (
+        if rt <> Int
+        then add_warning
+          "The function main should return an int"
+          Lexing.dummy_pos
+      )
     | FuncDecl (_, _, _, false) ->
       add_warning
         ("The function " ^ name ^ " has been declared but not defined")

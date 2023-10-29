@@ -184,6 +184,9 @@ let text_header =
   ".text\n" ^
   "main:\n" ^
   "jal __func_main\n" ^
+  "or $a0, $zero, $s0\n" ^
+  "li $v0, 1\n" ^
+  "syscall\n" ^
   "li $v0, 10\n" ^
   "syscall\n"
 
