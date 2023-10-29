@@ -6,7 +6,11 @@ exception CompilerError of string * Lexing.position
 
 type global_decl =
 	| VarDecl of var_type
-	| FuncDecl of var_type * var_type list * bool
+  (* La première valeur correspond au type renvoyé,
+     la deuxième valeur correspond aux types des arguments obligatoires,
+     la troisième valeur indique si la fonction accepte les varargs,
+     la quatrième valeur indique si la fonction est définie ou pas encore *)
+	| FuncDecl of var_type * var_type list * bool * bool
 
 type env = {
   mutable local_vars : (var*instruction_arg) list;
@@ -99,6 +103,41 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     warnings := (msg, pos) :: !warnings;
   in
 
+  let get_global = Hashtbl.find_opt globals in
+
+  let add_global pos name value =
+    if not (Hashtbl.mem globals name)
+    then Hashtbl.add globals name value
+    else (
+      match Hashtbl.find globals name, value with
+      | VarDecl _, VarDecl _ -> 
+        raise (CompilerError ("Redefinition of a global variable", pos))
+        | VarDecl _, FuncDecl _ -> 
+          raise (CompilerError ("Tried to create a function with the name of a global variable", pos))
+        | FuncDecl _, VarDecl _ -> 
+          raise (CompilerError ("Tried to create a global variable with the name of a function", pos))
+
+        | FuncDecl (old_rt, old_ra, old_flag1, old_is_def),
+            FuncDecl (new_rt, new_ra, new_flag1, new_is_def) ->
+        (
+            if old_is_def
+            then raise (CompilerError ("Redefinition of a function", pos));
+
+            if not (new_is_def)
+            then raise (CompilerError ("Redefinition of a forward declaration", pos));
+
+            if not (List.equal are_same_types old_ra new_ra) ||
+              (old_flag1 <> new_flag1) || not (are_same_types old_rt new_rt)
+            then raise (
+              CompilerError
+                ("Incompatible type between the forward declaration and real declaration", pos)
+            );
+
+            Hashtbl.replace globals name value
+        )
+    )
+  in
+
   let parse_sequences s pos =
     let sp = String.split_on_char '\\' s in
     let sp = List.mapi (fun i s ->
@@ -120,8 +159,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       ) sp in
     (String.concat "" sp)
   in
-
-  let get_global = Hashtbl.find_opt globals in
 
   let new_label () = 
     let i = !label_count in
@@ -179,13 +216,13 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     | Eident n -> begin
       match get_global n with
       | Some (VarDecl t) -> ([Move (RegGenResult, Label n)], Ref t)
-      | Some (FuncDecl (t, at, has_varargs)) -> (
+      | Some (FuncDecl (t, at, has_varargs, _)) -> (
         [Move (RegGenResult, Label (func_label n))],
         Ptr (Func (t, at, has_varargs))
       )
       | None -> (
         match get_local env n with
-        | None -> raise (CompilerError ("Unknown variable " ^ n, pos))
+        | None -> raise (CompilerError ("Unknown identifier " ^ n, pos))
         | Some ((_, t), var) ->
           ([Move (RegGenResult, var)], Ref t)
       )
@@ -661,13 +698,22 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
 
   let rec aux (prg : Ast.prog) = match prg with
   | [] -> ([], [])
-  | (Dfuncdef (name, returntype, args, code), _) :: q -> begin
+  | (Dfuncdecl (name, returntype, args), pos) :: q -> begin
+    let at = List.filter_map (fun a ->
+      match a with
+      | Val (_, t) -> Some t
+      | Varargs -> None
+    ) args in
+    add_global pos name (FuncDecl (returntype, at, List.mem Varargs args, false));
+    aux q
+  end
+  | (Dfuncdef (name, returntype, args, code), pos) :: q -> begin
     let at = List.filter_map (fun a ->
         match a with
         | Val (_, t) -> Some t
         | Varargs -> None
       ) args in
-    Hashtbl.add globals name (FuncDecl (returntype, at, List.mem Varargs args));
+    add_global pos name (FuncDecl (returntype, at, List.mem Varargs args, true));
     let env = {
       local_vars = (
         let v, _ =
@@ -701,7 +747,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
   end
 
   | (Dvardef (name, vartype), pos)::q -> (
-    Hashtbl.add globals name (VarDecl vartype);
+    add_global pos name (VarDecl vartype);
     let txt, dt = aux q in
     
     match vartype with
@@ -714,6 +760,17 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
   )
   in
   let code, data = aux prg in
+  (* Vérifie si des fonctions sont restés non déclarés. *)
+  Hashtbl.iter (fun name value ->
+    match value with
+    | VarDecl _ -> ()
+    (* *)
+    | FuncDecl (_, _, _, true) -> ()
+    | FuncDecl (_, _, _, false) ->
+      add_warning
+        ("The function " ^ name ^ " has been declared but not defined")
+        Lexing.dummy_pos
+  ) globals;
   ((
     code,
     (

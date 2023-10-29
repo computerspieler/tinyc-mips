@@ -49,7 +49,8 @@ and stmt_node =
   | Snothing
 
 type def =
-	| Dfuncdef of string * var_type * arg list * stmt
+  | Dfuncdecl of string * var_type * arg list
+  | Dfuncdef of string * var_type * arg list * stmt
 	| Dvardef of string * var_type
 
 type prog = (def * Lexing.position) list

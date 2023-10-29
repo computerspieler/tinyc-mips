@@ -210,6 +210,14 @@ def:
 				| Some a -> Dfuncdef(n, t, a, s)
 			), $startpos
 		}
+	| t=full_var_type n=Ident Lparam a=args_def? Rparam SemiColon
+		{
+			(
+				match a with
+				| None -> Dfuncdecl(n, t, [])
+				| Some a -> Dfuncdecl(n, t, a)
+			), $startpos
+		}
 ;
 
 prog: p = def* EOF { p }

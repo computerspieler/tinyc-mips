@@ -1,18 +1,11 @@
 int test;
 
+void non_existant_function(int x, ...);
+void print_string(int* s);
 
 int square(int x)
 {
 	return x*x;
-}
-
-void print_string(int* s)
-{
-	__asm (
-		"lw $a0, 0($a0)\n"
-		"li $v0, 4\n"
-		"syscall"
-	);
 }
 
 void print_int(int x)
@@ -25,6 +18,15 @@ void print_int(int x)
 
 	print_string("\n");
 	return;
+}
+
+void print_string(int* s)
+{
+	__asm (
+		"lw $a0, 0($a0)\n"
+		"li $v0, 4\n"
+		"syscall"
+	);
 }
 
 int read_int()
