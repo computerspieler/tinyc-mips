@@ -152,7 +152,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
           | 'n' -> "\n" ^ (String.sub s 1 (String.length s - 1))
           | 't' -> "\t" ^ (String.sub s 1 (String.length s - 1))
           | _ -> (
-            add_warning "Unknown sequence in a string\n" pos;
+            add_warning "Unknown sequence in a string" pos;
             "\\" ^ s
           )
         )
@@ -205,13 +205,15 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
             (fun acc x -> acc + (sizeof x))
             0 env.function_arguments_type
           in
-        ([Move (RegGenResult, ArgumentVar varargs_start)], Ptr Int)
+        ([Move (RegGenResult, ArgumentVar varargs_start)], Ptr Void)
       )
     | EsizeofType t -> ([Move (RegGenResult, Immediate (sizeof t))], Int)
     | EsizeofVar n -> begin
       match get_global n with
       | Some (VarDecl t) -> ([Move (RegGenResult, Immediate (sizeof t))], Int)
       | Some (FuncDecl _) -> (
+        (* On peut se permettre de renvoyer la taille d'un void* car tout pointeur
+           est de la même taille *)
         [Move (RegGenResult, Immediate (sizeof (Ptr Void)))],
         Int
       )
@@ -226,7 +228,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     | Estring s -> begin
       let id = List.length (!strings) in
       strings := s::(!strings);
-      ([Move (RegGenResult, Label (string_label id))], Ptr Int)
+      (* Certes une chaine de caractères n'est pas un void*, mais
+         pour le moment on ne supporte pas le type char *)
+      ([Move (RegGenResult, Label (string_label id))], Ptr Void)
     end
     | Eident n -> begin
       match get_global n with
@@ -250,9 +254,11 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         in
         
       let (f, t) = compile_expr env f in
-      let return_type, func_args_type, func_has_varargs = match t with
-      | Ptr (Func (rt, fat, has_varargs)) -> (rt, fat, has_varargs)
-      | _ -> raise (CompilerError ("Invalid function", pos))
+      (* On vérifie si l'on a bien un pointeur de fonction à gauche *)
+      let return_type, func_args_type, func_has_varargs =
+        match t with
+        | Ptr (Func (rt, fat, has_varargs)) -> (rt, fat, has_varargs)
+        | _ -> raise (CompilerError ("Invalid function", pos))
       in
 
       let rec check_args_types supposed reality =
@@ -288,11 +294,11 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       (
         [PushWord (Reg RegArgumentsStart)]
         @ (
-          (* Ici, nous générons les instructions liés à chaque instructions
-             et nous les envoyons sur la pile. Nous les traitons de
-             DROITE À GAUCHE (d'ou le List.rev) pour qu'à la fin, le
+          (* Ici, nous regroupons les instructions liés à chaque argument
+             et nous envoyons les résultats sur la pile. Nous les traitons de
+             DROITE À GAUCHE (d'où le List.rev) pour qu'à la fin, le
              premier argument soit à l'offset 0, le deuxième à un offset
-             i > 0, ... Ce qui permet d'avoir les arguments conditionnels
+             i_1 > 0, ... Ce qui permet d'avoir les arguments optionnelles
              à la fin, et d'avoir les arguments obligatoires à des 
              offsets fixes et connus *)
           List.fold_left (fun insts (ai, at) ->
@@ -366,6 +372,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       | _, Func _ -> raise (CompilerError ("Invalid rhs type", pos))
 
       | Ref t, _ when op = Assign -> (
+        (* Ça devrait surement être une erreur, mais vu qu'on n'a pas de
+           cast, et qu'on a pas beaucoup de types ça va rester un avertissement *)
         if not (are_same_types lhs_t rhs_t)
         then (
           add_warning 
@@ -394,25 +402,28 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       | Int, _ -> Int
       in
 
+      let insts_for_arithmetic_ptr =
+        match is_pointer lhs_t, is_pointer rhs_t with
+        | true, true | false, false -> []
+        | true, false ->
+          [Mul (
+            RegGen2, RegGen2,
+            Immediate (sizeof (get_pointer_type lhs_t))
+          )]
+        | false, true ->
+          [Mul (
+            RegGen1, RegGen1,
+            Immediate (sizeof (get_pointer_type rhs_t))
+          )]
+        in
+
       let operation_inst = match op with
       | Add -> (
-        (
-          match is_pointer lhs_t, is_pointer rhs_t with
-          | true, true | false, false -> []
-          | true, false ->
-            [Mul (
-              RegGen2, RegGen2,
-              Immediate (sizeof (get_pointer_type lhs_t))
-            )]
-          | false, true ->
-            [Mul (
-              RegGen1, RegGen1,
-              Immediate (sizeof (get_pointer_type rhs_t))
-            )]
-        )
-        @ [Add (RegGenResult, RegGen1, Reg RegGen2)]
+        insts_for_arithmetic_ptr @
+        [Add (RegGenResult, RegGen1, Reg RegGen2)]
       )
       | Sub -> (
+        insts_for_arithmetic_ptr @
         [Sub (RegGenResult, RegGen1, Reg RegGen2)]
       )
       | Mul -> [Mul (RegGenResult, RegGen1, Reg RegGen2)]
@@ -464,23 +475,32 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       )
 
       | Assign -> (
-        match lhs_t with
-        | Int | Void | Func _ ->
-          raise (CompilerError ("Can't assign a value", pos))
-        | Ref _ | Ptr _ -> 
-          [Move (RegGenResult, Reg RegGen2);
-          StoreWord ((RegGen1, 0), RegGenResult)]
+        [Move (RegGenResult, Reg RegGen2);
+        StoreWord ((RegGen1, 0), RegGenResult)]
       )
       in
 
       let retrieve_value_from_lhs =
         if op <> Assign
-          then (retrieve_value_from_variable_insts lhs_t RegGen1)
-          else []
-        in
+        then (retrieve_value_from_variable_insts lhs_t RegGen1)
+        else (
+          (* L'idée ici est de récuperer est de déréfencer juste assez pour récuperer
+             l'adresse voulu. Cela permet de traiter les cas comme :
+              void*** ptr;
+              **ptr = 0;
+
+            Sans ça, le code serait traité comme :
+              void*** ptr;
+              ptr = 0;
+          *)
+          match lhs_t with
+          | Ref (Ref t) -> retrieve_value_from_variable_insts (Ref t) RegGen1
+          | _ -> []
+        )
+      in
       let retrieve_value_from_rhs =
         retrieve_value_from_variable_insts rhs_t RegGen2
-        in
+      in
 
       (
         lhs_insts @ [PushWord (Reg RegGenResult)]
@@ -669,7 +689,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       | (t, pos) :: q when check_for_return [(t, pos)] -> (
         if q <> []
         then add_warning
-          "There's code after an unavoidable return statement\n" pos;
+          "There's code after an unavoidable return statement" pos;
         (t, pos)::[]
       )
       | t :: q -> t::(cut_after_return q)
@@ -683,7 +703,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         | Void -> [(Sreturn None, pos)]
         | Int | Ptr _ -> (
           add_warning
-            "Missing an unavoidable return statement, add a \"return 0\" at the end" pos;
+            "Missing an unavoidable return statement, adding a \"return 0\" at the end" pos;
           [(Sreturn (Some (Eint 0, pos)), pos)]
         )
         | _ -> raise (CompilerError ("Missing an unavoidable return statement", pos))
@@ -691,7 +711,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     ) in
 
     (* On limite la recherche de return au premier bloc étudié
-       i.e, le bloc décrivant une fonction *)
+       i.e, le bloc principale d'une fonction *)
     if env.check_for_return
     then env.check_for_return <- false;
 
@@ -708,15 +728,16 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       )
 
   | Sreturn None when env.function_return_type <> Void ->
-      raise (CompilerError ("Incompatible return type", pos)) 
+    raise (CompilerError ("Incompatible return type", pos)) 
   | Sreturn None -> ([PopFrame; Return], Void)
   | Sreturn (Some e) ->
     let i, t = compile_expr env e in
     let i = i @ (retrieve_value_from_variable_insts t RegGenResult) in
 
     let t = get_dereferenced_type t in
-
     (
+      (* Vérifie si le type de l'expression 
+         correspond bien à celui demandé par la fonction *)
       match t, env.function_return_type with
       | Ptr t, Ptr t' -> (
         if t <> t'
@@ -729,11 +750,12 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       )
       | _, _ ->
         if t <> env.function_return_type
-        then raise (CompilerError ("Incompatible return type", pos))
-      ;
+        then raise (CompilerError ("Incompatible return type", pos));
     );
     (
       i @
+      (* On profite du fait que RegTemp ne soit pas modifié par PopFrame
+         pour conserver notre résultat *)
       [Move (RegTemp, Reg RegGenResult);
        PopFrame;
        Move (RegGenResult, Reg RegTemp);
@@ -745,6 +767,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
 
   let rec aux (prg : Ast.prog) = match prg with
   | [] -> ([], [])
+
+  (* Correspond aux déclarations de fonctions en amont *)
   | (Dfuncdecl (name, returntype, args), pos) :: q -> begin
     let at = List.filter_map (fun a ->
       match a with
@@ -754,6 +778,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     add_global pos name (FuncDecl (returntype, at, List.mem Varargs args, false));
     aux q
   end
+
+  (* Correspond aux définitions de fonctions *)
   | (Dfuncdef (name, returntype, args, code), pos) :: q -> begin
     let at = List.filter_map (fun a ->
         match a with
@@ -794,6 +820,7 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     )
   end
 
+  (* Correspond aux déclarations de variables globales *)
   | (Dvardef (name, vartype), pos)::q -> (
     add_global pos name (VarDecl vartype);
     let txt, dt = aux q in
@@ -807,7 +834,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       raise (CompilerError ("Invalid type for variable", pos))
   )
   in
+
   let code, data = aux prg in
+
   (* Vérifie si des fonctions sont restés non déclarés. *)
   Hashtbl.iter (fun name value ->
     match value with
@@ -819,15 +848,21 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         ("The function " ^ name ^ " has been declared but not defined")
         Lexing.dummy_pos
   ) globals;
-  ((
-    code,
+
+  (
     (
-      List.concat (
-        List.mapi
-        (fun i s -> [DLabel (string_label i); DString s])
-        (List.rev (!strings))
-      )
-    ) @ data
-  (* Comme warnings agit comme une pile, il faut le renverser
-     pour avoir les avertissement dans le bon sens *)
-  ), List.rev !warnings)
+      code, (
+        List.concat (
+          List.mapi
+          (fun i s -> [DLabel (string_label i); DString s])
+          (* Comme strings agit comme une pile, il faut le renverser
+             pour avoir les chaines de caractères associés aux bons ID *)
+          (List.rev (!strings))
+        )
+      ) @ data
+    )
+
+    (* Comme warnings agit comme une pile, il faut le renverser
+       pour avoir les avertissement dans le bon sens *)
+    , List.rev !warnings
+  )

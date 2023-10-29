@@ -1,7 +1,7 @@
 (* Repris du project PtitPython *)
 let () =
 	(* Vérification de la ligne de commande *)
-	if Array.length Sys.argv > 4 || Array.length Sys.argv < 3 then (
+	if Array.length Sys.argv > 4 || Array.length Sys.argv < 2 then (
 		Printf.eprintf "usage: compiler [Architecture] [Input file] [Output file]\n" ;
 		exit 1
 	);

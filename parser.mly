@@ -163,7 +163,7 @@ stmt:
 		{ Sif(
 			cond,
 			(Sblock [code], Lexing.dummy_pos),
-			(Sblock [], Lexing.dummy_pos)
+			(Snothing, Lexing.dummy_pos)
 		  ), $startpos }
 	
 	| SemiColon { Snothing, $startpos }
