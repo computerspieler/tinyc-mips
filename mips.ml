@@ -94,7 +94,7 @@ let rec instruction_to_mips (i : instruction) : string =
   )
    
 	| Shr(rd, rs, Reg rt) ->
-		("slrv " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
+		("srlv " ^ (rtm rd) ^ "," ^ (rtm rs) ^ "," ^ (rtm rt))
 	| Shr(rd, rs, x) -> (
     (itm (Move (RegTemp, x))) ^ "\n" ^
     (itm (Shr (rd, rs, Reg RegTemp)))
