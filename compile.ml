@@ -402,28 +402,38 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       | Int, _ -> Int
       in
 
-      let insts_for_arithmetic_ptr =
+      let check_for_void_ptr () =
+        if get_dereferenced_type lhs_t = (Ptr Void) ||
+          get_dereferenced_type rhs_t = (Ptr Void)
+        then raise (CompilerError ("Arithmetic pointer is impossible with <void*>", pos));
+      in
+
+      let insts_for_arithmetic_ptr () =
         match is_pointer lhs_t, is_pointer rhs_t with
         | true, true | false, false -> []
-        | true, false ->
+        | true, false -> (
+          check_for_void_ptr ();
           [Mul (
             RegGen2, RegGen2,
             Immediate (sizeof (get_pointer_type lhs_t))
           )]
-        | false, true ->
+        )
+        | false, true -> (
+          check_for_void_ptr ();
           [Mul (
             RegGen1, RegGen1,
             Immediate (sizeof (get_pointer_type rhs_t))
           )]
+        )
         in
 
       let operation_inst = match op with
       | Add -> (
-        insts_for_arithmetic_ptr @
+        (insts_for_arithmetic_ptr ()) @
         [Add (RegGenResult, RegGen1, Reg RegGen2)]
       )
       | Sub -> (
-        insts_for_arithmetic_ptr @
+        (insts_for_arithmetic_ptr ()) @
         [Sub (RegGenResult, RegGen1, Reg RegGen2)]
       )
       | Mul -> [Mul (RegGenResult, RegGen1, Reg RegGen2)]
