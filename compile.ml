@@ -120,10 +120,10 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       | FuncDecl (old_rt, old_ra, old_flag1, old_is_def),
           FuncDecl (new_rt, new_ra, new_flag1, new_is_def) ->
       (
-          if old_is_def
+          if old_is_def && new_is_def
           then raise (CompilerError ("Redefinition of a function", pos));
 
-          if not (new_is_def)
+          if (not old_is_def) && (not new_is_def)
           then raise (CompilerError ("Redefinition of a forward declaration", pos));
 
           if not (List.equal are_same_types old_ra new_ra) ||
@@ -133,7 +133,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
               ("Incompatible type between the forward declaration and real declaration", pos)
           );
 
-          Hashtbl.replace globals name value
+          if new_is_def
+          then Hashtbl.replace globals name value;
       )
     )
   in
@@ -209,19 +210,19 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       )
     | EsizeofType t -> ([Move (RegGenResult, Immediate (sizeof t))], Int)
     | EsizeofVar n -> begin
-      match get_global n with
-      | Some (VarDecl t) -> ([Move (RegGenResult, Immediate (sizeof t))], Int)
-      | Some (FuncDecl _) -> (
-        (* On peut se permettre de renvoyer la taille d'un void* car tout pointeur
-           est de la même taille *)
-        [Move (RegGenResult, Immediate (sizeof (Ptr Void)))],
-        Int
-      )
+      match get_local env n with
+      | Some ((_, t), _) ->
+        ([Move (RegGenResult, Immediate (sizeof t))], Int)
       | None -> (
-        match get_local env n with
+        match get_global n with
+        | Some (VarDecl t) -> ([Move (RegGenResult, Immediate (sizeof t))], Int)
+        | Some (FuncDecl _) -> (
+          (* On peut se permettre de renvoyer la taille d'un void* car tout pointeur
+            est de la même taille *)
+          [Move (RegGenResult, Immediate (sizeof (Ptr Void)))],
+          Int
+        )
         | None -> raise (CompilerError ("Unknown identifier " ^ n, pos))
-        | Some ((_, t), _) ->
-          ([Move (RegGenResult, Immediate (sizeof t))], Int)
       )
     end
     | Eint i -> ([Move (RegGenResult, Immediate i)], Int)
@@ -233,17 +234,17 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       ([Move (RegGenResult, Label (string_label id))], Ptr Void)
     end
     | Eident n -> begin
-      match get_global n with
-      | Some (VarDecl t) -> ([Move (RegGenResult, Label n)], Ref t)
-      | Some (FuncDecl (t, at, has_varargs, _)) -> (
-        [Move (RegGenResult, Label (func_label n))],
-        Ptr (Func (t, at, has_varargs))
-      )
+      match get_local env n with
+      | Some ((_, t), var) ->
+        ([Move (RegGenResult, var)], Ref t)
       | None -> (
-        match get_local env n with
+        match get_global n with
+        | Some (VarDecl t) -> ([Move (RegGenResult, Label n)], Ref t)
+        | Some (FuncDecl (t, at, has_varargs, _)) -> (
+          [Move (RegGenResult, Label (func_label n))],
+          Ptr (Func (t, at, has_varargs))
+        )
         | None -> raise (CompilerError ("Unknown identifier " ^ n, pos))
-        | Some ((_, t), var) ->
-          ([Move (RegGenResult, var)], Ref t)
       )
     end
     | Ecall (f, args) -> begin
@@ -590,7 +591,12 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     (assignments, Void)
   end
 
-  | SInlineAssembly s -> ([InlineAssembly (parse_sequences s pos)], Void)
+  | SInlineAssembly s ->
+    ([PushWord (Reg RegArgumentsStart);
+      PushWord (Reg RegFramePtr);
+      InlineAssembly (parse_sequences s pos);
+      PopWord (Reg RegFramePtr);
+      PopWord (Reg RegArgumentsStart)], Void)
 
   | Sif (cond, stmt_true, stmt_false) -> begin
     let lt = new_label () in
