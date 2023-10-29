@@ -114,7 +114,13 @@ void main() {
 
 	func5();
 
-	sbrk(10);
+	y = sbrk(10 * sizeof(int));
+	
+	y[0] =  0;
+	y[1] = 10;
+	y[2] = 20;
+	y[3] = 30;
+	y[4] = 40;
 
 	main3(x);
 	func4(x, 1, 2, 3, 4);
@@ -123,6 +129,7 @@ void main() {
 	v = fib(x);
 	print_string("Fib(x)=");
 	print_int(v);
+	print_string("syr(x)=\n");
 	print_int(syr(x));
 
 	print_string ("The size in byte of int: ");
@@ -131,6 +138,13 @@ void main() {
 	print_int (sizeof(void*));
 	print_string ("The size of the variable y: ");
 	print_int (sizeof(y));
+	print_int(10*y[4]);
+
+
+	x = y;
+	print_int(x);
+	x = &y[0];
+	print_int(x);
 
 	return;
 }

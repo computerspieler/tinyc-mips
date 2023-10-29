@@ -6,9 +6,6 @@
 %token <int> Int
 %token <string> String 
 %token <string> Ident
-(*
-%token Lbracket Rbracket
-*)
 
 %token KdIf KdElse KdDo KdWhile KdInlineAsm
 %token KdInt KdVoid
@@ -18,7 +15,8 @@
 %token ShiftLeft ShiftRight
 %token SemiColon Comma QuestionMark Colon
 %token Plus Minus Star Div Percent Tilde
-%token Lparam Rparam Lbrace Rbrace ThreeDots
+%token Lparam Rparam Lbrace Rbrace Lbracket Rbracket
+%token ThreeDots
 
 %token DoubleEqual NotEqual Greater Less GreaterOrEqual LessOrEqual
 %token DoubleAmpersand DoublePipe
@@ -38,7 +36,7 @@
 
 %left Pipe Ampersand Star
 %nonassoc Uunop
-%nonassoc Lparam
+%nonassoc Lparam Lbracket
 
 %nonassoc IfX
 %nonassoc KdElse
@@ -77,6 +75,11 @@ expr:
 		}
 	| cond=expr QuestionMark et=expr Colon ef=expr
 		{ Econd(cond, et, ef), $startpos }
+	| var=expr Lbracket index=expr Rbracket
+		{ Eunop(
+			Ast.Dereference,
+			(Ebinop(Add, var, index), $startpos)
+		), $startpos }
 
 %inline binop:
 	| Star					{ Ast.Mul }

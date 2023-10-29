@@ -67,6 +67,8 @@ rule token = parse
 	| ','								{ Comma }
 	| '?'								{ QuestionMark }
 	| ':'								{ Colon }
+	| '['								{ Lbracket }
+	| ']'								{ Rbracket }
 	
 	| integer exp_10? as value			{ Int (int_of_string value) }
 	| letter (alphanum)* as value		{ id_or_kwd value }
@@ -75,6 +77,29 @@ rule token = parse
 		{
 			(* Retire les guillemets de debut et de fin *)
 			String (String.sub s 1 (String.length s-2))
+		}
+	| "0x" (digit | ['a' - 'f' 'A'-'F'])+ as value
+		{
+			let output = ref 0 in
+			for i=String.length value - 1 downto 0 do
+				let digit =
+					if value.[i] >= '0' && value.[i] >= '9'
+					then (Char.code value.[i] - Char.code '0')
+					else if value.[i] >= 'A' && value.[i] >= 'F'
+					then (Char.code value.[i] - Char.code 'A' + 10)
+					else (Char.code value.[i] - Char.code 'a' + 10)
+				in
+				output := !output * 16 + digit
+			done;
+			Int (!output)
+		}
+	| "0b" ('0'|'1')+ as value
+		{
+			let output = ref 0 in
+			for i=String.length value - 1 downto 0 do
+				output := !output * 2 + (Char.code value.[i] - Char.code '0')
+			done;
+			Int (!output)
 		}
 
   | _  { raise Lexing_error }
