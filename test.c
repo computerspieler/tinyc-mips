@@ -94,8 +94,7 @@ int* sbrk(int n)
 }
 
 void main() {
-	int x;
-	int *y = 0;
+    int x, *y = 0;
 
 	x = *y;
 

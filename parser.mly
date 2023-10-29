@@ -47,12 +47,6 @@
 %type <Ast.prog> prog
 
 %%
-var_type:
-	| KdVoid { Ast.Void }
-	| KdInt  { Ast.Int }
-	| v=var_type Star { Ast.Ptr v }
-;
-
 expr_str:
 	| l = String+ { List.fold_left (^) "" l }
 
@@ -108,18 +102,44 @@ expr:
 	| Minus		{ Ast.Neg }
 ;
 
+(* HACK: Le type void est ici utilisé comme un "place-holder"
+   qui sera remplacé par un type plus approprié *)
 var_def:
 	| n = Ident
-		{ [n, None] }
+		{ (n, None, Void, $startpos) }
 	| n = Ident AssignEqual e=expr
-		{ [n, Some e] }
-	| n = Ident Comma next=var_def
-		{ (n, None)::next }
-	| n = Ident AssignEqual e=expr Comma next=var_def
-		{ (n, Some e)::next }
+		{ (n, Some e, Void, $startpos) }
+	(* On profite que l'étoile soit prioritaire sur le égal*)
+	| Star v = var_def
+		{
+			let n, init_expr, t, _ = v in
+			(n, init_expr, Ptr t, $startpos)
+		}
+
+vars_def:
+	| v = var_def
+		{ [v] }
+	| v = var_def Comma next=vars_def
+		{ v::next }
 ;
 
 stmt:
+	| gt=var_type d=vars_def SemiColon {
+		let defs = List.map
+			(fun (name, init_expr, t, pos) ->
+				(* On remplace le type void par un type plus
+				   approprié *)
+				let rec aux t =
+					match t with
+					| Ptr t -> Ptr (aux t)
+					| Void -> gt
+					| _ -> failwith "Impossible"
+					in 
+				(name, init_expr, aux t, pos)
+			) d in
+		(SVarDecl(defs), $startpos)
+	}
+
 	| e=expr SemiColon { Ssimple e, $startpos }
 	| s=stmt_block { s }
 	| KdDo code=stmt_block KdWhile cond=condition SemiColon
@@ -151,26 +171,34 @@ stmt:
 	| KdInlineAsmMips Lbrace s=expr_str Rbrace SemiColon { SInlineAssembly s, $startpos }
 	| KdInlineAsmMips Lbrace Rbrace SemiColon { SInlineAssembly "", $startpos }
 
-	| t=var_type d=var_def SemiColon {(SVarDecl(d, t), $startpos)}
-
 %inline condition:
 	Lparam cond=expr Rparam	{ cond }
+%inline var_type:
+	| KdVoid { Ast.Void }
+	| KdInt  { Ast.Int }
 ;
 
 stmt_block: 
 	Lbrace s = stmt* Rbrace { Sblock s, $startpos }
 ;
 
+full_var_type:
+	| KdVoid { Ast.Void }
+	| KdInt  { Ast.Int }
+	| t=full_var_type Star { Ptr t }
+
 args_def:
-	| t=var_type n=Ident Comma r = args_def { (Val (n, t)) :: r }
+	| a=arg_def Comma r = args_def { a :: r }
 	| ThreeDots { [Varargs] }
-	| t=var_type n=Ident { [Val (n, t)] }
+	| a=arg_def { [a] }
+%inline arg_def:
+	| t=full_var_type n=Ident { Val (n, t) }
 ;
 
 def:
-	| t=var_type n=Ident SemiColon
+	| t=full_var_type n=Ident SemiColon
 		{ Dvardef (n, t), $startpos }
-	| t=var_type n=Ident Lparam a=args_def? Rparam s=stmt_block
+	| t=full_var_type n=Ident Lparam a=args_def? Rparam s=stmt_block
 		{
 			(
 				match a with

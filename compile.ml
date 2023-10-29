@@ -156,7 +156,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     | Void | Func _ -> false
   in
 
-  (* Note de conception: L'évaluation de chaque expression doit être indépendante *)
+  (* Note de conception: L'évaluation de chaque expression doit renvoyer le résultat
+     dans RegGenResult, et ne doit pas compter sur les valeurs de RegGen1 et RegGen2 *)
   let rec compile_expr env (e, pos) : (instruction list * var_type) = match e with
     | Evarargs ->
       if not env.function_has_varargs
@@ -467,29 +468,33 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
   | Scontinue -> ([Branch (Label env.loop_label_for_continue)], Void)
 
   | Ssimple e -> compile_expr env e
-  | SVarDecl (var_def, t) -> begin
-    let var_names = List.map (fun (n, _) -> n) var_def in
-    match t with
-    | Int | Ptr _ -> (
-      List.iter (add_local_vars env t pos) var_names;
-      let assignments = 
-        List.filter_map (fun (n, e) ->
-          match e with
-          | None -> None
-          | Some e -> Some (
-            Ssimple (
-              Ebinop (
-                Assign,
-                (Eident n, pos), e
-              ), pos
-            ), pos
-          )
-        ) var_def
-        in
-      compile_stmt env (Sblock assignments, pos)
-    )
-    | Void -> raise (CompilerError ("Can't generate void variables", pos))
-    | _ -> failwith "Unsupported"
+  | SVarDecl vars -> begin
+    List.iter (fun (var_name, _, t, pos) ->
+      match t with
+      | Int | Ptr _ -> add_local_vars env t pos var_name
+      | Void -> raise (CompilerError ("Can't generate void variables", pos))
+      | Ref _ | Func _ -> failwith "Impossible"
+    ) vars;
+
+    let assignments =
+      List.fold_left (fun out (var_name, init_expr, _, pos) ->
+        match init_expr with
+        | None -> out
+        | Some e ->
+          let insts, _ =
+            compile_stmt env
+              (Ssimple
+                (Ebinop
+                  (Assign, (Eident var_name, pos), e)
+                  , pos
+                )
+                , pos
+              ) in
+          out @ insts
+      ) [] vars
+    in
+
+    (assignments, Void)
   end
 
   | SInlineAssembly s -> ([InlineAssembly (parse_sequences s pos)], Void)

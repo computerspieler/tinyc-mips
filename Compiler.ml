@@ -56,4 +56,8 @@ let () =
       pos.pos_lnum (pos.pos_cnum-pos.pos_bol+1) msg;
       exit 1
   )
+  | Failure msg -> (
+    Printf.fprintf stderr "[BUG] %s\n" msg;
+    exit 1
+  )
 
