@@ -1,7 +1,7 @@
 int test;
 
 void non_existant_function(int x, ...);
-void print_string(int* s);
+void print_string(void* s);
 
 int square(int x)
 {
@@ -20,7 +20,7 @@ void print_int(int x)
 	return;
 }
 
-void print_string(int* s)
+void print_string(void* s)
 {
 	__asm (
 		"lw $a0, 0($a0)\n"
@@ -34,10 +34,9 @@ int read_int()
 	int x;
 
 	__asm (
-		"or $s0, $zero, $fp\n"
 		"li $v0, 5\n"
 		"syscall\n"
-		"sw $v0, 0($s0)\n"
+		"sw $v0, -4($fp)\n"
 	);
 
 	return x;
@@ -60,10 +59,21 @@ void func4(int x, ...)
 }
 
 int fib(int n) {
-	if(n<=1)
-		return n;
-    return fib(n-1) + fib(n-2);
+	int x, y, z;
+	
+	x = 0;
+	y = 1;
+
+	while(n > 0) {
+		z = x+y;
+		x=y;
+		y=z;
+		n = n - 1;
+	}
+
+	return x;
 }
+
 int syr(int n) {
 	print_int(n);
 	if(n==1) return 0;
@@ -78,18 +88,17 @@ void func5()
 	;
 }
 
-int* sbrk(int n)
+void* sbrk(int n)
 {
-	int *output;
+	void *output;
 
 	__asm (
-		"or $s0, $zero, $fp\n"
 		// On met la valeur de n dans le registre a0
 		"lw $a0, 0($a0)\n"
 		
 		"li $v0, 9\n"
 		"syscall\n"
-		"sw $v0, 0($s0)\n"
+		"sw $v0, -4($fp)\n"
 	);
 
 	return output;
@@ -97,8 +106,6 @@ int* sbrk(int n)
 
 void main() {
     int x, *y = 0;
-
-	x = y;
 
 	print_string("x?\n");
 	x = read_int();
@@ -113,9 +120,10 @@ void main() {
 	func4(x, 1, 2, 3, 4);
 
 	int v ;
-	v = fib(10);
+	v = fib(x);
+	print_string("Fib(x)=");
 	print_int(v);
-	print_int (syr(v));
+	print_int(syr(x));
 
 	print_string ("The size in byte of int: ");
 	print_int (sizeof(int));

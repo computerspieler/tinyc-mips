@@ -60,8 +60,8 @@ let add_local_vars env t pos name =
   if get_local env name <> None
   then raise (CompilerError ("Redefination of variable " ^ name, pos))
   else (
-    env.local_vars <- ((name, t), LocalVar env.local_var_stack_ptr)::env.local_vars;
-    env.local_var_stack_ptr <- env.local_var_stack_ptr + sizeof t
+    env.local_var_stack_ptr <- env.local_var_stack_ptr + sizeof t;
+    env.local_vars <- ((name, t), LocalVar (-env.local_var_stack_ptr))::env.local_vars;
   )
 
 let rec get_dereferenced_type t =
@@ -261,17 +261,27 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
         | _::_, [] ->
           raise (CompilerError ("Not enough arguments", pos))
         | [], _::_ ->
-          if func_has_varargs
-          then ()
+          if func_has_varargs then ()
           else raise (CompilerError ("Too much arguments", pos))
-        | ts::qs, tr::qr when are_same_types ts tr -> check_args_types qs qr
+        | ts::qs, tr::qr when are_same_types ts tr ->
+          check_args_types qs qr
+        | Ptr ts::qs, Ptr tr::qr -> (
+          add_warning (
+            "Implicit conversion from <" ^
+            (string_of_var_type (Ptr tr)) ^ "> to <" ^
+            (string_of_var_type (Ptr ts)) ^ ">"
+          ) pos;
+          check_args_types qs qr
+        )
         | ts::_, tr::_ ->
           raise (CompilerError (
             "Invalid argument type, it was supposed to be <" ^
             (string_of_var_type ts) ^ ">, not <" ^
             (string_of_var_type tr) ^ ">"
           , pos))
-      in check_args_types func_args_type args_type;
+      in check_args_types
+        (List.map get_dereferenced_type func_args_type)
+        (List.map get_dereferenced_type args_type);
 
       let args_length =
         List.fold_left (fun acc (_, at) -> acc + sizeof at) 0 args in
@@ -706,9 +716,22 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
 
     let t = get_dereferenced_type t in
 
-    if t <> env.function_return_type
-    then raise (CompilerError ("Incompatible return type", pos));
-
+    (
+      match t, env.function_return_type with
+      | Ptr t, Ptr t' -> (
+        if t <> t'
+        then 
+          add_warning (
+            "Implicit conversion from <" ^
+            (string_of_var_type (Ptr t)) ^ "> to <" ^
+            (string_of_var_type (Ptr t')) ^ ">"
+          ) pos;
+      )
+      | _, _ ->
+        if t <> env.function_return_type
+        then raise (CompilerError ("Incompatible return type", pos))
+      ;
+    );
     (
       i @
       [Move (RegTemp, Reg RegGenResult);

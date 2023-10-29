@@ -32,11 +32,11 @@ let rec instruction_to_mips (i : instruction) : string =
 		"sw $s0, -12($sp)\n" ^
 		"sw $s1,  -8($sp)\n" ^
 		"sw $s2,  -4($sp)\n" ^
-		"ori $fp, $sp, 0\n" ^
-		"addi $sp, $sp, -28"
+		"addi $sp, $sp, -28\n" ^
+		"ori $fp, $sp, 0"
 	)
 	| PopFrame -> (
-		"ori $sp, $fp, 0\n" ^
+		"addi $sp, $fp, 28\n" ^
 		"lw $ra, -28($sp)\n" ^
 		"lw $fp, -24($sp)\n" ^
 		"lw $a0, -20($sp)\n" ^
