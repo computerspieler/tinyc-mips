@@ -104,8 +104,9 @@ void* sbrk(int n)
 	return output;
 }
 
-void main() {
-    int x, *y = 0;
+int main() {
+    int x;
+	int *y = 0;
 
 	print_string("x?\n");
 	x = read_int();
@@ -146,7 +147,7 @@ void main() {
 	x = &y[0];
 	print_int(x);
 
-	return;
+	return 1;
 }
 
 int main2() {
