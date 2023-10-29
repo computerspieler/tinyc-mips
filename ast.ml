@@ -9,6 +9,15 @@ type binop =
 type unop =
 	| BinNot | BoolNot | Dereference | Reference | Neg
 
+
+type var_type =
+	| Void | Int | Ptr of var_type
+  (* Le type ref est exclusivement utilisé par le compilateur
+     en interne pour gérer les (dé)référencements.
+  *)
+  | Ref of var_type
+  | Func of var_type * var_type list * bool
+
 type expr = expr_node*Lexing.position
 and expr_node =
 	| Ebinop of binop * expr * expr
@@ -19,14 +28,8 @@ and expr_node =
 	| Estring of string
   | Econd of expr * expr * expr
   | Evarargs
-
-type var_type =
-	| Void | Int | Ptr of var_type
-  (* Le type ref est exclusivement utilisé par le compilateur
-     en interne pour gérer les (dé)référencements.
-  *)
-  | Ref of var_type
-  | Func of var_type * var_type list * bool
+  | EsizeofType of var_type
+  | EsizeofVar of string
 
 type var = string * var_type
 

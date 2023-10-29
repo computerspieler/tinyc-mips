@@ -13,7 +13,7 @@
 %token KdIf KdElse KdDo KdWhile KdInlineAsm
 %token KdInt KdVoid
 %token KdReturn KdBreak KdContinue
-%token KdVarargsStart
+%token KdVarargsStart KdSizeof
 
 %token ShiftLeft ShiftRight
 %token SemiColon Comma QuestionMark Colon
@@ -63,12 +63,16 @@ expr:
 	| Lparam e=expr Rparam		{ e }
 	| u=unop e=expr %prec Uunop { Eunop(u, e), $startpos }
 	| lhs=expr b=binop rhs=expr { Ebinop(b, lhs, rhs), $startpos }
+	| KdSizeof Lparam t = full_var_type Rparam
+		{ EsizeofType t, $startpos }
+	| KdSizeof Lparam n = Ident Rparam
+		{ EsizeofVar n, $startpos }
 	| f=expr Lparam args = expr_args? Rparam
 		{
 			(
-				match args with
-				| Some args -> Ecall(f, args)
-				| None -> Ecall(f, [])
+			match args with
+			| Some args -> Ecall(f, args)
+			| None -> Ecall(f, [])
 			), $startpos
 		}
 	| cond=expr QuestionMark et=expr Colon ef=expr

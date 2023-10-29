@@ -112,29 +112,29 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       match Hashtbl.find globals name, value with
       | VarDecl _, VarDecl _ -> 
         raise (CompilerError ("Redefinition of a global variable", pos))
-        | VarDecl _, FuncDecl _ -> 
-          raise (CompilerError ("Tried to create a function with the name of a global variable", pos))
-        | FuncDecl _, VarDecl _ -> 
-          raise (CompilerError ("Tried to create a global variable with the name of a function", pos))
+      | VarDecl _, FuncDecl _ -> 
+        raise (CompilerError ("Tried to create a function with the name of a global variable", pos))
+      | FuncDecl _, VarDecl _ -> 
+        raise (CompilerError ("Tried to create a global variable with the name of a function", pos))
 
-        | FuncDecl (old_rt, old_ra, old_flag1, old_is_def),
-            FuncDecl (new_rt, new_ra, new_flag1, new_is_def) ->
-        (
-            if old_is_def
-            then raise (CompilerError ("Redefinition of a function", pos));
+      | FuncDecl (old_rt, old_ra, old_flag1, old_is_def),
+          FuncDecl (new_rt, new_ra, new_flag1, new_is_def) ->
+      (
+          if old_is_def
+          then raise (CompilerError ("Redefinition of a function", pos));
 
-            if not (new_is_def)
-            then raise (CompilerError ("Redefinition of a forward declaration", pos));
+          if not (new_is_def)
+          then raise (CompilerError ("Redefinition of a forward declaration", pos));
 
-            if not (List.equal are_same_types old_ra new_ra) ||
-              (old_flag1 <> new_flag1) || not (are_same_types old_rt new_rt)
-            then raise (
-              CompilerError
-                ("Incompatible type between the forward declaration and real declaration", pos)
-            );
+          if not (List.equal are_same_types old_ra new_ra) ||
+            (old_flag1 <> new_flag1) || not (are_same_types old_rt new_rt)
+          then raise (
+            CompilerError
+              ("Incompatible type between the forward declaration and real declaration", pos)
+          );
 
-            Hashtbl.replace globals name value
-        )
+          Hashtbl.replace globals name value
+      )
     )
   in
 
@@ -207,6 +207,21 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
           in
         ([Move (RegGenResult, ArgumentVar varargs_start)], Ptr Int)
       )
+    | EsizeofType t -> ([Move (RegGenResult, Immediate (sizeof t))], Int)
+    | EsizeofVar n -> begin
+      match get_global n with
+      | Some (VarDecl t) -> ([Move (RegGenResult, Immediate (sizeof t))], Int)
+      | Some (FuncDecl _) -> (
+        [Move (RegGenResult, Immediate (sizeof (Ptr Void)))],
+        Int
+      )
+      | None -> (
+        match get_local env n with
+        | None -> raise (CompilerError ("Unknown identifier " ^ n, pos))
+        | Some ((_, t), _) ->
+          ([Move (RegGenResult, Immediate (sizeof t))], Int)
+      )
+    end
     | Eint i -> ([Move (RegGenResult, Immediate i)], Int)
     | Estring s -> begin
       let id = List.length (!strings) in
@@ -287,7 +302,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     end
     | Eunop (u, e) -> begin
       let i, rt = compile_expr env e in
-
       (
         match u with
         | BoolNot ->
@@ -305,6 +319,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
           (i @ 
             (retrieve_value_from_variable_insts rt RegGenResult) @
             [Not (RegGenResult, Reg RegGenResult)], Int)
+        | Neg ->
+          (i @ (retrieve_value_from_variable_insts rt RegGenResult) @
+            [Mul (RegGenResult, RegGenResult, Immediate (-1))], Int)
         | Dereference ->
           (
             i,
@@ -325,9 +342,6 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
               | _ -> raise (CompilerError ("Too much references", pos))
             in aux rt
           )
-        | Neg ->
-          (i @ (retrieve_value_from_variable_insts rt RegGenResult) @
-            [Mul (RegGenResult, RegGenResult, Immediate (-1))], Int)
       )
     end
 
@@ -483,10 +497,12 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       if not (is_a_valid_condition_type type_cond)
       then raise (CompilerError ("Invalid condition type", pos));
 
-      (
-        insts_cond @ 
+      let insts_cond = insts_cond @ 
         (retrieve_value_from_variable_insts type_cond RegGenResult) @
-        (bool_of_int RegGenResult) @
+        (bool_of_int RegGenResult) in
+
+      (
+        insts_cond @
         [ConditionalBranch (RegGenResult, lt, lf); Label lt] @
         insts_true  @ [Branch (Label ln); Label lf] @
         insts_false @ [Label ln]
@@ -545,10 +561,12 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let sti, _ = compile_stmt env stmt_true in
     let sfi, _ = compile_stmt env stmt_false in
     
-    let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
-
     if not (is_a_valid_condition_type ct)
     then raise (CompilerError ("Invalid condition type", pos));
+    
+    let ce = ce @
+      (retrieve_value_from_variable_insts ct RegGenResult) @
+      (bool_of_int RegGenResult) in
     
     (
       ce @
@@ -578,7 +596,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let sbi, _ = compile_stmt env' block in
     env.local_var_stack_ptr <- env'.local_var_stack_ptr;
     
-    let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
+    let ce = ce @
+      (retrieve_value_from_variable_insts ct RegGenResult) @
+      (bool_of_int RegGenResult) in
     
     (
       Label ls :: ce @
@@ -606,7 +626,9 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let sbi, sbt = compile_stmt env' block in
     env.local_var_stack_ptr <- env'.local_var_stack_ptr;
     
-    let ce = ce @ (retrieve_value_from_variable_insts ct RegGenResult) in
+    let ce = ce @
+      (retrieve_value_from_variable_insts ct RegGenResult) @
+      (bool_of_int RegGenResult) in
     
     (
       Label ls :: sbi @ ce @
@@ -671,8 +693,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
       (
         List.flatten insts
         , List.hd (
-            List.rev_map (fun (_, t) -> t) insts_with_type
-          )
+          List.rev_map (fun (_, t) -> t) insts_with_type
+        )
       )
 
   | Sreturn None when env.function_return_type <> Void ->
@@ -687,12 +709,14 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     if t <> env.function_return_type
     then raise (CompilerError ("Incompatible return type", pos));
 
-    (i @
+    (
+      i @
       [Move (RegTemp, Reg RegGenResult);
        PopFrame;
        Move (RegGenResult, Reg RegTemp);
-       Return
-      ], t)
+       Return]
+      , t
+    )
   | Snothing -> ([], Void)
   in
 
@@ -717,7 +741,8 @@ let compile_prog (prg : Ast.prog) : (Bytecode_ast.prog * warning list) =
     let env = {
       local_vars = (
         let v, _ =
-          List.fold_left (fun (out, stack) a -> match a with
+          List.fold_left (fun (out, stack) a ->
+            match a with
             | Val (n, t) -> (
               ((n, t), ArgumentVar stack)::out,
               (sizeof t) + stack

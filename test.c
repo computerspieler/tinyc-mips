@@ -44,7 +44,7 @@ int read_int()
 }
 
 void main3(int x) {
-	print_string("\nEst ce que x est plus grand que 10 ? ");
+	print_string("Est ce que x est plus grand que 10 ? ");
 	print_string(x > 10 ? "Oui\n" : "Non\n");
 }
 
@@ -98,7 +98,7 @@ int* sbrk(int n)
 void main() {
     int x, *y = 0;
 
-	x = *y;
+	x = y;
 
 	print_string("x?\n");
 	x = read_int();
@@ -116,6 +116,13 @@ void main() {
 	v = fib(10);
 	print_int(v);
 	print_int (syr(v));
+
+	print_string ("The size in byte of int: ");
+	print_int (sizeof(int));
+	print_string ("The size in byte of a pointer: ");
+	print_int (sizeof(void*));
+	print_string ("The size of the variable y: ");
+	print_int (sizeof(y));
 
 	return;
 }
