@@ -7,7 +7,7 @@
   (* Repris du projet ptit python *)	
   let kwd_tbl = ["if", KdIf; "do", KdDo; "while", KdWhile; "int", KdInt;
 	"void", KdVoid; "return", KdReturn; "break", KdBreak;
-	"continue", KdContinue; "else", KdElse; "__mips", KdInlineAsmMips;
+	"continue", KdContinue; "else", KdElse; "__asm", KdInlineAsm;
 	"__varargs_start", KdVarargsStart]
   let id_or_kwd s = try List.assoc s kwd_tbl with _ -> Ident s
 

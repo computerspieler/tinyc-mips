@@ -8,20 +8,20 @@ int square(int x)
 
 void print_string(int* s)
 {
-	__mips {
+	__asm (
 		"lw $a0, 0($a0)\n"
 		"li $v0, 4\n"
 		"syscall"
-	};
+	);
 }
 
 void print_int(int x)
 {
-	__mips {
+	__asm (
 		"lw $a0, 0($a0)\n"
 		"li $v0, 1\n"
 		"syscall"
-	};
+	);
 
 	print_string("\n");
 	return;
@@ -31,12 +31,12 @@ int read_int()
 {
 	int x;
 
-	__mips {
+	__asm (
 		"or $s0, $zero, $fp\n"
 		"li $v0, 5\n"
 		"syscall\n"
 		"sw $v0, 0($s0)\n"
-	};
+	);
 
 	return x;
 }
@@ -80,7 +80,7 @@ int* sbrk(int n)
 {
 	int *output;
 
-	__mips {
+	__asm (
 		"or $s0, $zero, $fp\n"
 		// On met la valeur de n dans le registre a0
 		"lw $a0, 0($a0)\n"
@@ -88,7 +88,7 @@ int* sbrk(int n)
 		"li $v0, 9\n"
 		"syscall\n"
 		"sw $v0, 0($s0)\n"
-	};
+	);
 
 	return output;
 }

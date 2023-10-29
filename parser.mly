@@ -10,7 +10,7 @@
 %token Lbracket Rbracket
 *)
 
-%token KdIf KdElse KdDo KdWhile KdInlineAsmMips
+%token KdIf KdElse KdDo KdWhile KdInlineAsm
 %token KdInt KdVoid
 %token KdReturn KdBreak KdContinue
 %token KdVarargsStart
@@ -168,8 +168,12 @@ stmt:
 	| KdContinue SemiColon { Scontinue, $startpos }
 	| KdReturn e=expr? SemiColon { Sreturn e, $startpos }
 
-	| KdInlineAsmMips Lbrace s=expr_str Rbrace SemiColon { SInlineAssembly s, $startpos }
-	| KdInlineAsmMips Lbrace Rbrace SemiColon { SInlineAssembly "", $startpos }
+	| KdInlineAsm Lparam s=expr_str? Rparam SemiColon
+		{
+			match s with
+			| Some s -> (SInlineAssembly s, $startpos)
+			| None -> (SInlineAssembly "", $startpos)
+		}
 
 %inline condition:
 	Lparam cond=expr Rparam	{ cond }
